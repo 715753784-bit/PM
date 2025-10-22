@@ -1,0 +1,5039 @@
+---
+title: "PM分析全流程"
+output: html_document
+date: "2025-02-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 1.加载R包
+```{r}
+#加载R包
+rm(list = ls())
+library(stringr)
+library(Seurat)
+library(dplyr)
+library(patchwork)
+library(clustree)
+library(cowplot)
+library(tidyverse)
+```
+
+# 1.1 读取数据
+```{r}
+options(Seurat.object.assay.version = "v3")
+sce.all <- readRDS("result.rds")
+
+#查看数据
+table(sce.all$orig.ident)
+table(sce.all$`Subset sub_celltype`)#大类分类
+table(sce.all$`Subset Macro_celltype`)#细分类，34类
+table(sce.all$`Subset AlveolarMacro_1.0`)#全部大类后→细分alveolar macrophagge
+```
+
+# 1.2 建立分组
+```{r}
+#建立不同分组
+table(sce.all$orig.ident)
+sce.all$sample <- ifelse(grepl("ABX",sce.all$orig.ident),
+                         "ABX",
+                         ifelse(grepl("Con",sce.all$orig.ident),
+                                "Control",
+                                "PM"))
+table(sce.all$sample)
+```
+
+# 1.3 可视化-umap
+```{r fig.width=12,fig.height=6}
+##**大分类**
+Idents(sce.all) <- "Subset sub_celltype"
+table(sce.all@active.ident)
+new.cluster.ids <- c("Immune cell","Endothelial cell","Epithelial cell","Stroma cell","Immune cell","Immune cell","Immune cell","Immune cell")
+names(new.cluster.ids) <- levels(sce.all)
+sce.all <- RenameIdents(sce.all, new.cluster.ids)
+sce.all$celltype <- sce.all@active.ident
+table(sce.all@active.ident)
+color <- c("#b95055","#de8b36","#3ca0cf","#a992c0")
+plot <- DimPlot(sce.all, label= F,pt.size = 1,cols = color)+
+  NoLegend()+labs(x = "UMAP_1", y = "UMAP_2",title = "Celltype") +
+  theme(panel.border = element_rect(fill=NA,color="white", size=1, linetype="solid"),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+plot
+ggsave(file = "celltype_umap.pdf",plot = plot,width = 3,height = 3)
+
+##**细分类**
+Idents(sce.all) <- sce.all$`Subset Macro_celltype`
+table(sce.all@active.ident)
+color1 <- c('#4b6aa8','#3ca0cf','#c376a7','#ad98c3','#cea5c7',
+            '#53738c','#a5a9b0','#a78982','#696a6c','#92699e',
+            '#d69971','#df5734','#6c408e','#ac6894','#d4c2db',
+            '#537eb7','#83ab8e','#ece399','#405993','#cc7f73',
+            '#b95055','#d5bb72','#bc9a7f','#e0cfda','#d8a0c0',
+            '#e6b884','#64a776','#cbdaa9','#efd2c9','#da6f6d',
+            '#c4daec','#61bada','#b7deea','#408444')
+plot1 <- DimPlot(sce.all, label= F,pt.size = 1,cols = color1)+
+  labs(x = "UMAP_1", y = "UMAP_2",title = "Celltype") +
+  theme(panel.border = element_rect(fill=NA,color="white", size=1, linetype="solid"),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+plot1
+ggsave(file = "subcelltype_umap.pdf",plot = plot1,width = 12,height = 6)
+
+#坐标轴
+axis <- ggh4x::guide_axis_truncated(
+    trunc_lower = unit(0, "npc"),
+    trunc_upper = unit(2, "cm")
+)
+plot2 <- DimPlot(sce.all, label= F,pt.size = 1,cols = color1)+
+  labs(x = "UMAP_1", y = "UMAP_2") +
+  theme(
+         aspect.ratio = 1,
+         panel.background = element_blank(),
+         panel.grid = element_blank(),
+         axis.line = element_line(arrow = arrow(type = "closed")),
+         axis.title = element_text(hjust = 0.05, face = "italic")) +
+    guides(color = FALSE, x = axis, y = axis) +
+    scale_x_continuous(breaks = NULL) +
+    scale_y_continuous(breaks = NULL)
+plot2
+ggsave(file = "subcelltype_umap_axis.pdf",plot = plot2,width = 12,height = 6)
+
+#**按照分组分别画图**
+Idents(sce.all) <- sce.all$`Subset Macro_celltype`
+table(sce.all$sample)
+sce.all_CON <- subset(x = sce.all, sample == "Control")
+sce.all_ABX <- subset(x = sce.all, sample == "ABX")
+sce.all_PM <- subset(x = sce.all, sample == "PM")
+
+# Control
+axis <- ggh4x::guide_axis_truncated(
+    trunc_lower = unit(0, "npc"),
+    trunc_upper = unit(2, "cm")
+)
+plot2 <- DimPlot(sce.all_CON, label= F,pt.size = 0.1,cols = color1)+
+  labs(x = "UMAP_1", y = "UMAP_2") +
+  theme(
+         aspect.ratio = 1,
+         panel.background = element_blank(),
+         panel.grid = element_blank(),
+         axis.line = element_line(arrow = arrow(type = "closed")),
+         axis.title = element_text(hjust = 0.05, face = "italic")) +
+    guides(color = FALSE, x = axis, y = axis) +
+    scale_x_continuous(breaks = NULL) +
+    scale_y_continuous(breaks = NULL)
+plot2
+ggsave(file = "subcelltype_umap_control.pdf",plot = plot2,width = 12,height = 6)
+
+# ABX
+axis <- ggh4x::guide_axis_truncated(
+    trunc_lower = unit(0, "npc"),
+    trunc_upper = unit(2, "cm")
+)
+plot2 <- DimPlot(sce.all_ABX, label= F,pt.size = 0.1,cols = color1)+
+  labs(x = "UMAP_1", y = "UMAP_2") +
+  theme(
+         aspect.ratio = 1,
+         panel.background = element_blank(),
+         panel.grid = element_blank(),
+         axis.line = element_line(arrow = arrow(type = "closed")),
+         axis.title = element_text(hjust = 0.05, face = "italic")) +
+    guides(color = FALSE, x = axis, y = axis) +
+    scale_x_continuous(breaks = NULL) +
+    scale_y_continuous(breaks = NULL)
+plot2
+ggsave(file = "subcelltype_umap_ABX.pdf",plot = plot2,width = 12,height = 6)
+
+# PM
+axis <- ggh4x::guide_axis_truncated(
+    trunc_lower = unit(0, "npc"),
+    trunc_upper = unit(2, "cm")
+)
+plot2 <- DimPlot(sce.all_PM, label= F,pt.size = 0.1,cols = color1)+
+  labs(x = "UMAP_1", y = "UMAP_2") +
+  theme(
+         aspect.ratio = 1,
+         panel.background = element_blank(),
+         panel.grid = element_blank(),
+         axis.line = element_line(arrow = arrow(type = "closed")),
+         axis.title = element_text(hjust = 0.05, face = "italic")) +
+    guides(color = FALSE, x = axis, y = axis) +
+    scale_x_continuous(breaks = NULL) +
+    scale_y_continuous(breaks = NULL)
+plot2
+ggsave(file = "subcelltype_umap_PM.pdf",plot = plot2,width = 12,height = 6)
+save(sce.all,file = "sce.all1.Rdata")
+```
+
+# 2.细胞分类再确认
+## 2.1 Epithelial cell
+```{r fig.width=8,fig.height=10}
+Idents(sce.all) <- sce.all$`Subset sub_celltype`
+table(Idents(sce.all))
+##**提取Epithelial cell**
+Epi <- subset(x = sce.all, ident = "Epithelial cells")
+table(Epi$`Subset Macro_celltype`)
+Idents(Epi) <- Epi$`Subset Macro_celltype`
+DimPlot(Epi,reduction = "umap", label =T)
+
+##**查看marker表达情况**
+Epi$epicelltype <- Idents(Epi)
+table(Epi$epicelltype)
+Idents(Epi) <- Epi$epicelltype
+# 云平台marker表达情况
+epi1 <- c("Scgb1a1","Scgb3a1","Cyp2f2","Gabrp",# Club cell
+          "Foxj1","Cd24a","Dynlrb2","Tekt4","Wnt7b",#Cilliated cell
+          "Msln"#Mesothelial cell
+          )
+plot <- DotPlot(Epi, features = epi1)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Epi_cel_marker.pdf",plot = plot,width = 8,height = 5)
+
+# 文献marker表达情况
+lungepi_cellmarker1 <- c("AGER",#AT1
+                      "SFTPA1",#AT2
+                      "SCGB1A1",#Club
+                      "KRT17",#Basal
+                      "TPPP3"#Ciliated
+                      )
+lungepi_cellmarker1=str_to_title(unique(lungepi_cellmarker1))
+lungepi_cellmarker1
+plot <- DotPlot(Epi, features = lungepi_cellmarker1)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Epi_review_marker1.pdf",plot = plot,width = 8,height = 5)
+
+lungepi_cellmarker2 <- c("SPRR3","GDPD3","SPRR1A","SPRR2A","TMPRSS11E",#Squamous
+                      "RARRES2","ASCL3","CFTR","FOXI2","FOXI1",#Ionocyte
+                      "1SG20","SAA4","SAA2","EFHC1","CCDC153","CCDC113","SAA1",#Cil_diff/cil_acute_phase/ciliated
+                      "CDC20B","FOXJ1","MYCL","CCNO","FOXN4",#FOXN4
+                      "PIGR","XBP1","MUC5AC","VMO1","SCGB3A1","CYP2A13","CYP2B6","SCGB1A1",#Sce_diff/Goblet/Club
+                      "BCAM","KRT15","RT5","TP63"#Basal
+                      )
+lungepi_cellmarker2=str_to_title(unique(lungepi_cellmarker2))
+lungepi_cellmarker2
+plot <- DotPlot(Epi, features = lungepi_cellmarker2)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Epi_review_marker2.pdf",plot = plot,width = 10,height = 5)
+
+airwayepi_cellmarker <- c('SFTPB ','SFTPC ','SFTPD','LAMP3','SLC34A2','ABCA3','AQP3',#AEC2
+                           'PDPN','HOPX','AGER','CAV1','SEMA3B',#AEC1
+                           'SCGB1A1','SCGB3A1','SCGB3A2','CYP2F1',#Club
+                           'FOXJ1','CETN2','TEKT1','CCDC78','KRT14',#Ciliated
+                           'APOE','EMP3','APOC1','CD44',#Basal
+                           'UCHL1','ASCL1','CALCA',#NE
+                           'TM4SF1','MUC5B','LRP5',#AEP
+                           'SOX2','SOX9','ID2'#progenitor TF
+                           )
+airwayepi_cellmarker=str_to_title(unique(airwayepi_cellmarker))
+airwayepi_cellmarker
+plot <- DotPlot(Epi, features = airwayepi_cellmarker)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Epi_review_marker3.pdf",plot = plot,width = 10,height = 5)
+
+airwayepi_cellmarker <- c("KRT15", "KRT17", "TP63",#basal resting
+                          "KRT5", "SERPINB3",#suprabasal
+                          "DSG3", "RAB38", "TNS4",#hillock-like
+                          "CDC20B", "KDELC2", "E2F7",#deuterosomal
+                          "BEST4", "LYPD2",#multiciliated_nasal
+                          "RSPH1", "C20orf85", "C9orf24",#multiciliated_nonnasal
+                          "CYP2F1", "SCGB3A1", #+"BPIFB1",#Club_nonnasal
+                          "TCN1", "ASRGL1",#Club_nasal
+                          "CEACAM5", "PSCA",#Goblet_nasal
+                          "GPX8", "ALDH1A3",#Goblet_bronchial
+                          "BPIFB1", "C16orf89", "NPDC1",#Goblet_subsegmental
+                          "SFTPB", "SCGB3A2", "SFTA2",#AT0
+                          "RNASE1", "SFTA1P",#+"SFTPB",#pre-TB secretory
+                          "BSND", "IGF1", "CLCNKB",#Ionocyte
+                          "DAB1",#Tuft
+                          "CELF3", "SLC6A17", "CDK5R2"#neuroendocrine
+                          )
+airwayepi_cellmarker=str_to_title(unique(airwayepi_cellmarker))
+airwayepi_cellmarker
+plot <- DotPlot(Epi, features = airwayepi_cellmarker)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Epi_review_marker4.pdf",plot = plot,width = 8,height = 5)
+
+# 上皮marker总结
+#AT1:"AGER"
+#AT2:"SFTPA1"
+#Ciliated cell:"Foxj1","Cd24a","Dynlrb2","Tekt4","TPPP3","EFHC1","CCDC153","CCDC113","RSPH1"
+#Club cell:"SCGB1A1"
+#Goblet cell:"Scgb3a1","Gabrp","PIGR","BPIFB1"
+#Neuroendocrine cell:'UCHL1','ASCL1','CALCA',"CELF3"
+#Mesothelial:"Msln"
+
+# 小提琴图可视化
+plot <- VlnPlot(Epi, features = c("Ager",#AT1
+                          'Abca3',#AT2 #'Lamp3'
+                          "Foxj1",#Ciliated cell #"Dynlrb2"
+                          "Scgb1a1",#Club cell
+                          "Scgb3a1",#Goblet cell #"Gabrp","Bpifb1"
+                          'Calca',#Neuroendocrine cell #'Uchl1','Ascl1',"Celf3"
+                          "Cav1"#Mesothelial(来源：Lineage dynamics of murine pancreatic development at single-cell resolution) #"Igfbp2"
+                          ),pt.size = 0)
+ggsave(file = "Epi_vlnplot.pdf",plot = plot,width = 8,height = 10)
+```
+
+## 2.2 B cell
+```{r}
+table(Idents(sce.all))
+##**提取B cell**
+Bcell <- subset(x = sce.all, ident = "B cells")
+table(Bcell$`Subset Macro_celltype`)
+Idents(Bcell) <- Bcell$`Subset Macro_celltype`
+DimPlot(Bcell,reduction = "umap", label =T)
+
+##**查看marker表达情况**
+Bcell$Bcelltype <- Idents(Bcell)
+table(Bcell$Bcelltype)
+Idents(Bcell) <- Bcell$Bcelltype
+
+#平台marker
+Bcell1 <- c("Cd79a","Eaf2","Jchain","Sdc1","Xbp1")
+plot <- DotPlot(Bcell, features = Bcell1)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "B_cel_marker.pdf",plot = plot,width = 5,height = 5)
+
+##**尝试重新聚类**
+immune <- Bcell
+options(Seurat.object.assay.version = "v3")
+immune=CreateSeuratObject(counts = immune@assays$RNA@counts,
+                       meta.data = immune@meta.data)
+head(immune@meta.data, 10)
+  
+immune <- NormalizeData(immune)
+GetAssay(immune,assay = "RNA")
+immune <- FindVariableFeatures(immune, nfeatures = 2000)
+immune <- ScaleData(immune, 
+                    #vars.to.regress = c("percent.ribo", "percent.mt","nCount_RNA"), 
+                    verbose = FALSE)
+
+immune <- RunPCA(immune, 
+                 #features = VariableFeatures(immune),
+                 verbose = FALSE)
+DimPlot(immune, reduction = "pca")
+# 应该选多少个主成分进行后续分析
+ElbowPlot(immune,ndims = 50)
+#去批次
+library(harmony)
+immune <- RunHarmony(immune, group.by.vars = c("orig.ident"),plot_convergence = T)
+names(immune@reductions)
+## [1] "pca"     "harmony"
+immune <- RunUMAP(immune,  dims = 1:20, 
+                   reduction = "harmony")
+immune <- RunTSNE(immune,  dims = 1:20, 
+                   reduction = "harmony")
+DimPlot(immune,reduction = "umap",label= F,raster=FALSE) 
+DimPlot(immune,reduction = "tsne",label= F,raster=FALSE)
+
+immune <- FindNeighbors(immune,reduction = "harmony",dims = 1:20)
+immune@graphs$RNA_snn
+for (res in c(0.01, 0.05, 0.1, 0.2, 0.3, 0.5,0.8,1)) {
+  immune=FindClusters(immune,  
+                       resolution = res, 
+                       algorithm = 1)}
+apply(immune@meta.data[,grep("RNA_snn_res",
+                              colnames(immune@meta.data))],2,table)
+
+p2_tree=clustree(immune@meta.data, prefix = "RNA_snn_res.")
+#ggsave(plot=p2_tree, filename="Tree_diff_resolution.pdf",width = 7, height = 12)
+p2_tree
+table(immune@meta.data$RNA_snn_res.0.8)#根据聚类树选择0.8进行初步聚类
+immune <- FindClusters(immune, resolution = 0.8) #分辨率
+DimPlot(immune,reduction = "umap",label= F)
+
+## 查看文献marker
+lymphoid_cellmarker <- c("MS4A1",#B cell
+                         "TNFRSF17"#Plasma cell
+                         )
+lymphoid_cellmarker=str_to_title(unique(lymphoid_cellmarker))
+lymphoid_cellmarker
+plot <- DotPlot(immune, features = lymphoid_cellmarker)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "B_review_marker1.pdf",plot = plot,width = 5,height = 5)
+
+base_cellmarker <- c( "CD19", "CD79A", "MS4A1",#B cell
+                     "IGHG1", "MZB1", "SDC1"#Plasma cell
+                     )
+base_cellmarker=str_to_title(unique(base_cellmarker))
+base_cellmarker
+plot <- DotPlot(immune, features = base_cellmarker)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "B_review_marker2.pdf",plot = plot,width = 4,height = 5)
+
+Bcell1 <- c("Cd79a","Eaf2","Jchain","Sdc1","Xbp1")
+plot <- DotPlot(immune, features = Bcell1)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "B_cel_marker1.pdf",plot = plot,width = 5,height = 5)
+
+immune = RenameIdents(immune,"0" = "B cells",
+                       "1" = "B cells",
+                       "2" = "B cells",
+                       "3" = "B cells",
+                       "4" = "B cells",
+                       "5" = "B cells",
+                       "6" = "B cells",
+                       "7" = "B cells",
+                       "8" = "B cells",
+                       "9" = "B cells",
+                       "10" = "B cells",
+                       "11" = "Plasma cells",
+                       "12" = "B cells"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+DimPlot(immune,reduction = "umap", label =F)
+save(immune,file = "Bcell.Rdata")
+
+##**还原回大群**
+dim(immune) 
+dim(sce.all)
+table(Idents(immune))
+Idents(sce.all) <- sce.all$`Subset Macro_celltype`
+table(Idents(sce.all))
+ 
+Idents(sce.all, cells = colnames(immune)) <- Idents(immune)
+DimPlot(sce.all,label = TRUE)
+# 给大群的metadata一个新的名字celltype_major_endo_sub 用来储存包含FIB细致注释的大群信息
+sce.all$celltype_final <- Idents(sce.all)
+table(sce.all$celltype_final)
+
+##**查看marker表达情况**
+load(file = "Bcell.Rdata")
+Bcell <- immune
+table(Bcell$celltype)
+Idents(Bcell) <- Bcell$celltype
+
+#平台marker
+plot <- VlnPlot(Bcell, features = c("Cd79a","Eaf2","Jchain","Sdc1","Xbp1"),pt.size = 0)
+ggsave(file = "B_celmarker.pdf",plot = plot,width = 10,height = 8)
+
+plot <- VlnPlot(Bcell, features = c("Cd79a",#B cells
+                                    "Eaf2"#Plasma cells
+                                    ),pt.size = 0)
+ggsave(file = "Bcell_vlnplot.pdf",plot = plot,width = 4,height = 3)
+```
+
+## 2.3 T cell
+```{r fig.width=15,fig.height=12}
+Idents(sce.all) <- sce.all$`Subset sub_celltype`
+table(Idents(sce.all))
+##**提取T cell**
+Tcell <- subset(x = sce.all, ident = "T cells")
+table(Tcell$`Subset Macro_celltype`)
+Idents(Tcell) <- Tcell$`Subset Macro_celltype`
+DimPlot(Tcell,reduction = "umap", label =T)
+
+##**查看marker表达情况**
+Tcell$Tcelltype <- Idents(Tcell)
+table(Tcell$Tcelltype)
+Idents(Tcell) <- Tcell$Tcelltype
+
+# 平台marker
+Tmarker1 <- c("Sell","Cd4","Igfbp4","Lef1",#CD4+ naive T cells
+              "Tcf7","Ccr7","Cd8a","Il7r","Lef1",#CD8+ naive T cells
+              "Ctla2a","Eomes","Gzmb","Gzmk",#CD4+ effector T cells
+              "Aqp3","Blk","Cd163l1","Cd3e","Kcnkl","Rorc","Trdc","Trgc1",#Gamma delta T cells
+              "Cxcr5","Pdcd1","Bcl6","Il21","Icos","Cd40lg","Gata3","Il13","Il4","Izumo1r","Lag3","Maf","Btla","Sh2d1a",#Follicular helper T cells
+              "Pdcd1","Tox","Apod","Ctla4","Havcr2","Lag3","Mt1","Nr4a2","Sparc",#CD8+ exhausted T cells
+              "Cd40lg","Cxcr6","Il17a","Il23r","Rora","Rorc","Tnfsf8",#T-helper 17 cells
+              "Gzma","Gzmb","Cd8a","Ifng","Ccl5","Ms4a4b","Lef1","Klrd1","Klrc1","Gzmk","Ccl4","Fasl","Cx3cr1","Cd8b1","Ccr5","Ccr2","Prf1",#CD8+ effector T cells
+              "Ifng","Tbx21","Cd4","Cxcr3","Cxcr6","Ifna1","Il17f",#T-helper 1 cells
+              "Arg1","Gata3","Il4","Tnfrsf18"#T-helper 2 cells
+              )
+plot <- VlnPlot(Tcell, features = c("Arg1","Gata3","Il4","Tnfrsf18"),pt.size = 0)
+ggsave(file = "T_T-helper 2 cells.pdf",plot = plot,width = 15,height = 10)
+
+plot <- VlnPlot(Tcell, features = c("Igfbp4",#CD4+ naive T cells
+                                    "Ccr7",#CD8+ naive T cells
+                                    "Eomes",#CD4+ effector T cells
+                                    "Blk",#Gamma delta T cells
+                                    "Btla",#Follicular helper T cells
+                                    "Ctla4",#CD8+ exhausted T cells
+                                    "Cd40lg",#T-helper 17 cells
+                                    "Cd8b1",#CD8+ effector T cells
+                                    "Ifng",#T-helper 1 cells
+                                    "Arg1"#T-helper 2 cells
+                                    ),pt.size = 0)
+ggsave(file = "Tcell_vlnplot.pdf",plot = plot,width = 15,height = 12)
+save(Tcell,file = "Tcell.Rdata")
+```
+
+## 2.4 DC cells
+```{r}
+table(Idents(sce.all))
+DC <- subset(sce.all,ident = "Plasmacytoid dendritic cells")
+Idents(DC) <- "Dendritic cells"
+
+##**还原回大群**
+dim(DC) 
+dim(sce.all)
+table(Idents(DC))
+table(Idents(sce.all))
+ 
+Idents(sce.all, cells = colnames(DC)) <- Idents(DC)
+DimPlot(sce.all,label = TRUE)
+# 给大群的metadata一个新的名字celltype_major_endo_sub 用来储存包含FIB细致注释的大群信息
+sce.all$celltype_final <- Idents(sce.all)
+save(sce.all,file = "sce.all1.Rdata")
+save(DC,file = "DC.Rdata")
+```
+
+## 2.5 Endothelial cell
+```{r}
+Idents(sce.all) <- sce.all$`Subset sub_celltype`
+table(Idents(sce.all))
+
+##**提取Endothelial cell**
+endo <- subset(sce.all,ident = "Endothelial cells")
+table(endo$`Subset Macro_celltype`)
+Idents(endo) <- endo$`Subset Macro_celltype`
+DimPlot(endo,reduction = "umap", label =T)
+
+##**查看marker表达情况**
+endo$endocelltype <- Idents(endo)
+table(endo$endocelltype)
+Idents(endo) <- endo$endocelltype
+
+#文献marker
+endo_cellmarker <- c("CCL21", "PROX1",#lymphatic EC
+                     "HEY1", "IGFBP3",#arteries
+                     "CD36", "CA4",#capillaries
+                     "ACKR1"#veins
+                     )
+endo_cellmarker=str_to_title(unique(endo_cellmarker))
+endo_cellmarker
+typical_cellmarker <- c(
+                  "SPARCL1", "AQP1", "RNASE1",#Blood vessel
+                  "CCL21", "TFF3", "MMRN1"#Lymphatic EC
+                  )
+typical_cellmarker=str_to_title(unique(typical_cellmarker))
+typical_cellmarker
+blood_lymph <- c("DKK2", "IGFBP3",#EC arterial
+                 "SOSTDC1",#EC aerocyte capillary
+                 "IL7R", "FCN3", "MT1M",#EC general capillary
+                 "TPD52L1", "ZNF385D", "OLFM1",#EC venous systemic
+                 "CPE", "C7","MMRN1",#EC venous pulmonary
+                 "LYVE1", "CCL21",#lymphatic EC mature
+                 "MKI67", "TOP2A",#lymphatic EC proliferating
+                 "PROX1", "KHD1L1", "FLT4", "SEMA3D"#lymphatic EC differentiating
+                 )
+blood_lymph=str_to_title(unique(blood_lymph))
+blood_lymph
+#Tip <- c("KCNE3", "ESM1", "ANGPT2", "APLN")#来源：https://www.jianshu.com/p/5efd228b9b76
+#Tip=str_to_title(unique(Tip))
+#Tip
+
+## 尝试找tip cell 和 PECs的marker
+sce.markers <- FindAllMarkers(endo, 
+                              only.pos = TRUE,  # 只返回positive基因
+                              min.pct = 0.25,
+                              logfc.threshold = 0.25
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+sce.markers= sce.markers %>% dplyr::select(gene,everything()) %>% dplyr::filter(p_val<0.05)
+top10 = sce.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+#PECs：Cmss1,Adgrl3
+#Endothelial tip cells:很多都是B cell marker，这里直接去掉
+endo <- subset(endo, idents = c("Endothelial tip cells"), invert = TRUE)
+table(Idents(endo))
+
+plot <- VlnPlot(endo, features = c("Hey1",#AECs
+                                    "Cd36",#CapECs
+                                    "Prox1",#LECs
+                                    "Adgrl3",#PECs
+                                    "Cpe"#VECs
+                                    ),pt.size = 0)
+ggsave(file = "endo_vlnplot.pdf",plot = plot,width = 8,height = 6)
+save(endo,file = "Endocell.Rdata")
+
+##**还原回大群**
+dim(endo) 
+dim(sce.all)
+table(Idents(endo))
+Idents(sce.all) <- sce.all$`Subset Macro_celltype`
+table(Idents(sce.all))
+Idents(sce.all, cells = colnames(endo)) <- Idents(endo)
+sce.all <- subset(sce.all, idents = c("Endothelial tip cells"), invert = TRUE)
+DimPlot(sce.all,label = TRUE)
+# 给大群的metadata一个新的名字celltype_major_endo_sub 用来储存包含FIB细致注释的大群信息
+sce.all$celltype_final <- Idents(sce.all)
+save(sce.all,file = "sce.all1.Rdata")
+```
+
+## 2.6 Myeloid
+```{r}
+Idents(sce.all) <- sce.all$`Subset sub_celltype`
+table(Idents(sce.all))
+
+##**提取Myeloid cells**
+Myeloid <- subset(sce.all,ident = "Myeloid cells")
+table(Myeloid$`Subset Macro_celltype`)
+Idents(Myeloid) <- Myeloid$`Subset Macro_celltype`
+DimPlot(Myeloid,reduction = "umap", label =T)
+
+##**尝试重新聚类**
+table(Myeloid$celltype_final)
+immune <- Myeloid
+options(Seurat.object.assay.version = "v3")
+immune=CreateSeuratObject(counts = immune@assays$RNA@counts,
+                       meta.data = immune@meta.data)
+head(immune@meta.data, 10)
+  
+immune <- NormalizeData(immune)
+GetAssay(immune,assay = "RNA")
+immune <- FindVariableFeatures(immune, nfeatures = 2000)
+immune <- ScaleData(immune, 
+                    #vars.to.regress = c("percent.ribo", "percent.mt","nCount_RNA"), 
+                    verbose = FALSE)
+
+immune <- RunPCA(immune, 
+                 #features = VariableFeatures(immune),
+                 verbose = FALSE)
+DimPlot(immune, reduction = "pca")
+# 应该选多少个主成分进行后续分析
+ElbowPlot(immune,ndims = 50)
+#去批次
+library(harmony)
+immune <- RunHarmony(immune, group.by.vars = c("orig.ident"),plot_convergence = T)
+names(immune@reductions)
+## [1] "pca"     "harmony"
+immune <- RunUMAP(immune,  dims = 1:20, 
+                   reduction = "harmony")
+immune <- RunTSNE(immune,  dims = 1:20, 
+                   reduction = "harmony")
+DimPlot(immune,reduction = "umap",label= F,raster=FALSE) 
+DimPlot(immune,reduction = "tsne",label= F,raster=FALSE)
+
+immune <- FindNeighbors(immune,reduction = "harmony",dims = 1:20)
+immune@graphs$RNA_snn
+for (res in c(0.01, 0.05, 0.1, 0.2, 0.3, 0.5,0.8,1)) {
+  immune=FindClusters(immune,  
+                       resolution = res, 
+                       algorithm = 1)}
+apply(immune@meta.data[,grep("RNA_snn_res",
+                              colnames(immune@meta.data))],2,table)
+
+p2_tree=clustree(immune@meta.data, prefix = "RNA_snn_res.")
+#ggsave(plot=p2_tree, filename="Tree_diff_resolution.pdf",width = 7, height = 12)
+p2_tree
+table(immune@meta.data$RNA_snn_res.0.8)#根据聚类树选择0.8进行初步聚类
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+DimPlot(immune,reduction = "umap",label= F)
+
+##**查看cel平台marker**
+cel_marker <- c("Ear1","Fabp4","Itgax","Marco","Mrc1","Siglecf",#AM
+                "Ace","Ear2","Eno3","Fcgr3a",#Non-classic monocyte
+                "Ccr2","Ly6c2","Chil3","Cd14","Fcgr1","Fn1","Ifitm3",#Classic monocyte
+                "Xcr1","Itgae","Cadm1","Clec9a","Wdfy4","Cd24a","Cd81","Flt3","Gcsam","Itgax","Tlr3","Zbtb46","Zdhhc2"#Conventional type 1 dendritic cells
+                )
+cel_marker <- unique(cel_marker)
+plot <- DotPlot(immune, features = cel_marker)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Macro_cel_marker.pdf",plot = plot,width = 12,height = 10)
+
+##**查看文献marker**
+Myeloid_cellmarker <- c("XCR1", "CLEC9A", "CLNK",#DC1
+                        "PKIB", "CLEC10A", "CD1E",#DC2
+                        "LAD1", "CCL19",#migratory DC
+                        "SCT", "SMPD3", "LILRA4",#plasmacytoid DC
+                        "CYP27A1", "MARCO", "FABP4",#alveolar macrophages
+                        "SPP1", "HAMP",#Monocyte-derived Mph
+                        "F13A1", "FOLR2",#interstitial Mph perivascular
+                        "S100A12", "FCN1", "RNASE2",#Classical monocyte
+                        "MTSS1", "LILRA5", #Non-classical monocyte
+                        "MS4A2", "SLC18A2", "RGS13"#Mast cell
+                        )
+Myeloid_cellmarker=str_to_title(unique(Myeloid_cellmarker))
+Myeloid_cellmarker
+plot <- DotPlot(immune, features = Myeloid_cellmarker)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Macro_review_marker1.pdf",plot = plot,width = 10,height = 8)
+
+alveolarmacrophages_cellmarker <- c("CCL20", "FAM89A",#Mph CCL3
+                                    "MT1M", "CCL18", "MT1E",#Mph MT-positive
+                                    "TYMS", "CENPW", "MND1"#Mph proliferating
+                                    )
+alveolarmacrophages_cellmarker=str_to_title(unique(alveolarmacrophages_cellmarker))
+alveolarmacrophages_cellmarker
+plot <- DotPlot(immune, features = alveolarmacrophages_cellmarker)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Macro_review_marker2.pdf",plot = plot,width = 5,height = 8)
+
+myeloidDC_cellmarker <- c("CLEC4C", "IRF7", "TCF4", "GZMB",#pDC
+                   "XCR1", "CLNK", "CLEC9A",#cDC1
+                   "FCER1A", "HLA-DPB1", "HLA-DQB1", "CD1E", "CD1C", "CLEC10A", "HLA-DQA2",#cDC2
+                   "CCL19", "LAMP3", "IDO1", "IDO2", "LAD1", "FSCN1", "CCR7", "LY75", "CCL22", "CD40", "BIRC3", "NFKB2",#DC3
+                   "APOC1", "APOE", "HLA-DRB5", "C1QA", "C1QB", "CD14",#macrophage
+                   "HLA-DRB1", "TIMP1", "S100A11", "CXCL8", "IL1B", "PTGS2", "S100A9", "S100A8", "MMP19"#monocyte
+                   )#分DC可以
+myeloidDC_cellmarker=str_to_title(unique(myeloidDC_cellmarker))
+myeloidDC_cellmarker
+plot <- DotPlot(immune, features = myeloidDC_cellmarker)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Macro_review_marker3.pdf",plot = plot,width = 10,height = 8)
+##去掉6，12，18
+immune <- subset(immune, idents = c("18"), invert = TRUE)
+immune = RenameIdents(immune,"0" = "Alveolar macrophages",
+                       "1" = "Non-classical monocytes",
+                       "2" = "Alveolar macrophages",
+                       "3" = "Alveolar macrophages",
+                       "4" = "Classical monocytes",
+                       "5" = "Interstitial macrophages",
+                       "7" = "Alveolar macrophages",
+                       "8" = "Classical monocytes",
+                       "9" = "Alveolar macrophages",
+                       "10" = "Alveolar macrophages",
+                       "11" = "Alveolar macrophages",
+                       "13" = "Interstitial macrophages",
+                       "14" = "Interstitial macrophages",
+                       "15" = "Alveolar macrophages",
+                       "16" = "Alveolar macrophages",
+                       "17" = "Dendritic cells",
+                       "19" = "Non-classical monocytes",
+                       "20" = "Non-classical monocytes"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+DimPlot(immune,reduction = "umap", label =F)
+save(immune,file = "Macrophage.Rdata")##去掉6，12，18群并注释好的
+
+##**还原回大群**
+dim(immune) 
+dim(sce.all)
+table(Idents(immune))
+Idents(sce.all) <- sce.all$celltype_final
+table(Idents(sce.all))
+table(sce.all$`Subset sub_celltype`)
+ 
+Idents(sce.all, cells = colnames(immune)) <- Idents(immune)
+DimPlot(sce.all,label = TRUE)
+#sce.all <- subset(sce.all, idents = c("Myeloid cells"), invert = TRUE)
+#DimPlot(sce.all,label = TRUE)
+
+# 给大群的metadata一个新的名字celltype_major_endo_sub 用来储存包含细致注释的大群信息
+table(sce.all$celltype_final)
+sce.all$celltype_final <- Idents(sce.all)
+table(sce.all$celltype_final)
+save(sce.all,file = "sce.all1.Rdata")
+
+##**marker小提琴图**
+load("Macrophage.Rdata")
+table(Idents(immune))
+immune <- subset(immune, idents = c("Dendritic cells"), invert = TRUE)
+plot <- VlnPlot(immune, features = c("Apoc1", "Apoe", "C1qa", "C1qb", "Cd14"),pt.size = 0)
+## AM:"Ear1","Fabp4","Itgax","Marco","Mrc1","Siglecf"
+## NCM："Ace","Ear2","Eno3","Fcgr3a"
+## CM:"Ccr2","Ly6c2","Chil3","Cd14","Fcgr1","Fn1","Ifitm3"
+## IM:"Apoc1", "Apoe", "C1qa", "C1qb", "Cd14"
+
+plot <- VlnPlot(immune, features = c("Ear1","Marco","Mrc1",#AM
+                                    "Ace","Eno3",#NCM
+                                    "Ly6c2","Fn1",#CM
+                                    "Apoe","C1qa","C1qb"#IM
+                                    ),pt.size = 0)
+ggsave(file = "macro_vlnplot.pdf",plot = plot,width = 15,height = 12)
+```
+
+## 2.6 Fibroblast
+```{r}
+table(sce.all$celltype_final)
+##**提取Fibroblast**
+Fibro <- subset(sce.all,ident = "Fibroblasts")
+table(Fibro$celltype_final)
+
+##**尝试重新聚类**
+immune <- Fibro
+options(Seurat.object.assay.version = "v3")
+immune=CreateSeuratObject(counts = immune@assays$RNA@counts,
+                       meta.data = immune@meta.data)
+head(immune@meta.data, 10)
+  
+immune <- NormalizeData(immune)
+GetAssay(immune,assay = "RNA")
+immune <- FindVariableFeatures(immune, nfeatures = 2000)
+immune <- ScaleData(immune, 
+                    #vars.to.regress = c("percent.ribo", "percent.mt","nCount_RNA"), 
+                    verbose = FALSE)
+
+immune <- RunPCA(immune, 
+                 #features = VariableFeatures(immune),
+                 verbose = FALSE)
+DimPlot(immune, reduction = "pca")
+# 应该选多少个主成分进行后续分析
+ElbowPlot(immune,ndims = 50)
+#去批次
+library(harmony)
+immune <- RunHarmony(immune, group.by.vars = c("orig.ident"),plot_convergence = T)
+names(immune@reductions)
+## [1] "pca"     "harmony"
+immune <- RunUMAP(immune,  dims = 1:20, 
+                   reduction = "harmony")
+immune <- RunTSNE(immune,  dims = 1:20, 
+                   reduction = "harmony")
+DimPlot(immune,reduction = "umap",label= F,raster=FALSE) 
+DimPlot(immune,reduction = "tsne",label= F,raster=FALSE)
+
+immune <- FindNeighbors(immune,reduction = "harmony",dims = 1:20)
+immune@graphs$RNA_snn
+for (res in c(0.01, 0.05, 0.1, 0.2, 0.3, 0.5,0.8,1)) {
+  immune=FindClusters(immune,  
+                       resolution = res, 
+                       algorithm = 1)}
+apply(immune@meta.data[,grep("RNA_snn_res",
+                              colnames(immune@meta.data))],2,table)
+
+p2_tree=clustree(immune@meta.data, prefix = "RNA_snn_res.")
+#ggsave(plot=p2_tree, filename="Tree_diff_resolution.pdf",width = 7, height = 12)
+p2_tree
+table(immune@meta.data$RNA_snn_res.0.8)#根据聚类树选择0.8进行初步聚类
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+DimPlot(immune,reduction = "umap",label= F)
+
+##**查看文献marker**
+stroma_cellmarker <- c("Prox1", "Lyve1", "Nr2f2","Vwf","Nos3",#Endothelial cell
+                       "Col1a1", "Pdgfra", "Dcn", "Vim",#Fibroblast
+                       "Tcf21", "Col3a1", "Wnt2", "Pdgfrb", "Axin2", "Lgr5", "Lgr6", "Col1a2", "Cdh11", "Gli1",#Mesenchymal cell
+                       "Rgs5", "Cspg4", #Mural cell
+                       "Myh11", "Tagln", "Acta2", "Myl9", "Cnn1", "Fn1"#Myofibroblast
+)
+plot <- DotPlot(immune, features = stroma_cellmarker)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Fibro_review_marker1.pdf",plot = plot,width = 10,height = 8)
+
+typical_cellmarker <- c("LUM", "COL6A3", "CFD",#Fibroblast lineage
+                  "MYH11", "TINAGL1", "PLN",#Smooth muscle
+                  "KLK11", "UPK3B", "ITLN1"#Mesothelium
+                  )
+typical_cellmarker=str_to_title(unique(typical_cellmarker))
+typical_cellmarker
+plot <- DotPlot(immune, features = typical_cellmarker)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Fibro_review_marker2.pdf",plot = plot,width = 5,height = 8)
+
+fibro_smooth <- c("COL15A1", "CXCL14", "DIO2",#peribronchial fibroblast
+                  "MFAP5", "SCARA5", "PI16",#adventitial fibroblast
+                  "SPINT2", "LIMCH1", "FGFR4",#alveolar fibroblast
+                  "LAMC3",#pericyte
+                  "ARCKSL1", "APOC1", "MMP23B",#subpleural fibroblast
+                  "LMOD1", "ATP1B1", "TYRP1",#myofibroblast
+                  "FAM83D",#smooth muscle FAM83D
+                  "EGR1", "FOSB", "ATF3",#SM activated stress response
+                  "KLK11", "UPK3B", "ITLN1"#Mesothelium
+                  )
+fibro_smooth=str_to_title(unique(fibro_smooth))
+fibro_smooth
+plot <- DotPlot(immune, features = fibro_smooth)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "Fibro_review_marker3.pdf",plot = plot,width = 10,height = 8)
+
+##**注释**
+immune = RenameIdents(immune,"0" = "Fibroblasts",
+                       "1" = "Fibroblasts",
+                       "2" = "Fibroblasts",
+                       "3" = "Fibroblasts",
+                       "4" = "Fibroblasts",
+                       "5" = "Fibroblasts",
+                       "6" = "Fibroblasts",
+                       "7" = "Myofibroblasts",
+                       "8" = "Fibroblasts",
+                       "9" = "Fibroblasts",
+                       "10" = "Mesenchymal cells",
+                       "11" = "Fibroblasts",
+                       "12" = "Fibroblasts",
+                       "13" = "Fibroblasts",
+                       "14" = "Myofibroblasts",
+                       "15" = "Mesothelial cells",
+                       "16" = "Fibroblasts",
+                       "17" = "Fibroblasts"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+DimPlot(immune,reduction = "umap", label =F)
+save(immune,file = "Fibro.Rdata")
+
+##**还原回大群**
+dim(immune) 
+dim(sce.all)
+table(Idents(immune))
+Idents(sce.all) <- sce.all$celltype_final
+table(Idents(sce.all))
+ 
+Idents(sce.all, cells = colnames(immune)) <- Idents(immune)
+DimPlot(sce.all,label = TRUE)
+#sce.all <- subset(sce.all, idents = c("Myeloid cells"), invert = TRUE)
+#DimPlot(sce.all,label = TRUE)
+
+# 给大群的metadata一个新的名字celltype_major_endo_sub 用来储存包含细致注释的大群信息
+table(sce.all$celltype_final)
+sce.all$celltype_final <- Idents(sce.all)
+table(sce.all$celltype_final)
+save(sce.all,file = "sce.all1.Rdata")
+
+##**marker小提琴图**
+##去掉mesothelial
+immune <- subset(immune, idents = c("Mesothelial cells"), invert = TRUE)
+plot <- VlnPlot(immune, features = c("Tcf21", "Col3a1", "Wnt2", "Pdgfrb", "Axin2", "Lgr5", "Lgr6", "Col1a2", "Cdh11", "Gli1"),pt.size = 0)
+## Fibroblast:"Col1a1", "Pdgfra", "Dcn", "Vim","Lum","Col6a3"
+## Myofibroblast："Myh11", "Tagln", "Acta2", "Myl9", "Cnn1", "Fn1","Lmod1","Atp1b1"
+## Mesenchymal:"Tcf21", "Col3a1", "Wnt2", "Pdgfrb", "Axin2", "Lgr5", "Lgr6", "Col1a2", "Cdh11", "Gli1"
+
+plot <- VlnPlot(immune, features = c("Col1a1","Pdgfra","Col6a3",#Fibroblast
+                                    "Tagln","Lmod1",#Myofibroblast
+                                    "Pdgfrb"#Mesenchymal
+                                    ),pt.size = 0)
+ggsave(file = "fibro_vlnplot.pdf",plot = plot,width = 8,height = 6)
+```
+
+# 3.肺泡巨噬细胞再分类
+```{r}
+##**提取肺泡巨噬细胞**
+table(Idents(immune))
+AM <- subset(immune,ident = "Alveolar macrophages")
+immune <- AM
+
+##**重新聚类**
+options(Seurat.object.assay.version = "v3")
+immune=CreateSeuratObject(counts = immune@assays$RNA@counts,
+                       meta.data = immune@meta.data)
+head(immune@meta.data, 10)
+  
+immune <- NormalizeData(immune)
+GetAssay(immune,assay = "RNA")
+immune <- FindVariableFeatures(immune, nfeatures = 2000)
+immune <- ScaleData(immune, 
+                    #vars.to.regress = c("percent.ribo", "percent.mt","nCount_RNA"), 
+                    verbose = FALSE)
+
+immune <- RunPCA(immune, 
+                 #features = VariableFeatures(immune),
+                 verbose = FALSE)
+DimPlot(immune, reduction = "pca")
+# 应该选多少个主成分进行后续分析
+ElbowPlot(immune,ndims = 50)
+#去批次
+library(harmony)
+immune <- RunHarmony(immune, group.by.vars = c("orig.ident"),plot_convergence = T)
+names(immune@reductions)
+## [1] "pca"     "harmony"
+immune <- RunUMAP(immune,  dims = 1:20, 
+                   reduction = "harmony")
+immune <- RunTSNE(immune,  dims = 1:20, 
+                   reduction = "harmony")
+DimPlot(immune,reduction = "umap",label= F,raster=FALSE) 
+DimPlot(immune,reduction = "tsne",label= F,raster=FALSE)
+
+immune <- FindNeighbors(immune,reduction = "harmony",dims = 1:20)
+immune@graphs$RNA_snn
+for (res in c(0.01, 0.05, 0.1, 0.2, 0.3, 0.5,0.8,1)) {
+  immune=FindClusters(immune,  
+                       resolution = res, 
+                       algorithm = 1)}
+apply(immune@meta.data[,grep("RNA_snn_res",
+                              colnames(immune@meta.data))],2,table)
+
+p2_tree=clustree(immune@meta.data, prefix = "RNA_snn_res.")
+#ggsave(plot=p2_tree, filename="Tree_diff_resolution.pdf",width = 7, height = 12)
+p2_tree
+save(immune,file = "AM.Rdata")
+
+##**分辨率0.3**
+load("AM.Rdata")
+table(immune@meta.data$RNA_snn_res.0.3)#根据聚类树选择0.3进行初步聚类
+immune <- FindClusters(immune, resolution = 0.1) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6"
+                       )
+plot <- DimPlot(immune,reduction = "umap",label= T)
+ggsave(file = "AM0.3_dimplot_label.pdf",plot = plot,width = 6,height = 4)
+
+### 巨噬细胞marker
+new1 <- c("S100A","FCNA","VCAN",#myeloid-derived suppressor cell/M-c1-THBS1
+          "APOE","C1QA","C1QB","TREM2","SLC40A1","GPNMB"#M-c2-C1QA
+          )
+new1=str_to_title(unique(new1))
+new1
+plot <- DotPlot(immune, features = new1)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker1.pdf",plot = plot,width = 5,height = 5)
+
+new3and4 <- c("TREM2","SPP1","FABP5","NUPR1",#TREM2+
+         "FOLR2","CD163","C1QB","SEPP1","LYVE1","MRC1",#FOLR2+
+         "MT1G","MT2A","MT1X"
+         )#无排他性
+new3and4=str_to_title(unique(new3and4))
+new3and4
+plot <- DotPlot(immune, features = new3and4)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker2.pdf",plot = plot,width = 6,height = 5)
+
+new5 <- c("FCNA","APOE","C1QB","SPP1",#SPP1+
+          "CXCL9","CD1E"#CXCL9+
+          )
+new5=str_to_title(unique(new5))
+new5
+plot <- DotPlot(immune, features = new5)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker3.pdf",plot = plot,width = 5,height = 5)
+
+MetaTime <- c("C1QB", "C1QA", "C1QC", "CTSD", #Mac-C1Q
+              "SPP1", "CSTB", "PLIN2", "LDHA", "MIF", "ENO1",#Mac-SPP1
+              "CTSB", "GPNMB", "FCER1G",#Mac-SPP1-C1Q
+              "APOC1", "APOE", "LGALS3", #Mac-lipid-PPARG
+              "CXCL8", "CXCL2", "CXCL3", "CXCL1", "NFKBIZ",#Mac-IL1-JUN
+              "RNASE1"#Mac-RNASE1-C1Q
+              )
+MetaTime=str_to_title(unique(MetaTime))
+MetaTime
+plot <- DotPlot(immune, features = MetaTime)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker4.pdf",plot = plot,width = 7,height = 5)
+
+new7_1 <- c("CIDEC","KRT79",#AM特异性
+            "SPP1","FN1",#促纤维化
+            "STMN1","TOP2A",#增殖
+            "JUN","S100A4"#促炎
+          )
+new7_1=str_to_title(unique(new7_1))
+new7_1
+plot <- DotPlot(immune, features = new7_1)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker5.pdf",plot = plot,width = 5,height = 5)
+
+new7_2 <- c("SPP1","FN1","TREM2",#Fabp5+Gpnmb+
+          "KRT79",#Lung resident AMs
+          "STMN1", "TOP2A",#CCL17- producing
+          "JUNB", "S100A4", "APOE",#Nr4a1+
+          "CENPF", "KIF23",#Fabp1-Car4-Krt79+Cidect+
+          "MCM3", "E2F1", "GMNN"#Fabp1+Car4+Krt79+Cidect+
+          )
+new7_2=str_to_title(unique(new7_2))
+new7_2
+plot <- DotPlot(immune, features = new7_2)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker6.pdf",plot = plot,width = 6,height = 5)
+
+new8and9 <- c("FCNA",#mono-mac
+          "FABP4","INHBA",#FABP4hi
+          "SPP1","MERTK","LGMN","SIGLEC10"#SPP1hi
+          )#可二分
+new8and9=str_to_title(unique(new8and9))
+new8and9
+plot <- DotPlot(immune, features = new8and9)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker7.pdf",plot = plot,width = 4,height = 5)
+
+new10and11 <- c("CD163","LGMN","MARCKS", "CD84", "OLFML2B", "MERTK", "GPNMB", "CTSB", "NPL", "CMKLR1", "MAF", "A2M", "SDC3", "PMP22", "LIPA", "PLA2G7", "ADAP2", "SPP1", "FMN1", "IDH1", "APOE", "SLAMF8", "HS3ST1", "MCP4", "TGFBI", "ECGF1", "CCL2", "CD14",#CD163/LGMN-AM
+           "MKI67","TOP2A","NUSAP1","BIRC5", "CENPA", "PPIC", "NUPR1", "S100A13"#proliferating-AM
+           )
+new10and11=str_to_title(unique(new10and11))
+new10and11
+plot <- DotPlot(immune, features = new10and11)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker8.pdf",plot = plot,width = 10,height = 5)
+
+new12 <- c("SPP1","SDC2","PLA2G7","SERPING1",#纤维化
+           "S100A8","S100A9",#促炎
+           "ABCA1"#lipid
+           )
+new12=str_to_title(unique(new12))
+new12
+plot <- DotPlot(immune, features = new12)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker9.pdf",plot = plot,width = 5,height = 5)
+
+new13 <- c("PPARG","MRC1","YM1","MARCKS","IL1RN","PLA2G7","MMP9","SPP1"#促纤维化
+           )
+new13=str_to_title(unique(new13))
+new13
+plot <- DotPlot(immune, features = new13)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker10.pdf",plot = plot,width = 5,height = 5)
+
+new14 <- c("IL1B","NFKBIA","NFKB1","CXCL2","CXCL3","CXCL8","CCL4","PTGS2","IL1A",#inflammatory AM
+           "LIPA","LPL","FDX1","SPP1","SPARC","MATK","GPC4","PALLD","CHI3L1","Gp39","CTSK","MMP9","MMP7","CSF1","FCMR","TIMP3","COL22A1","SIGLEC15","CCL22"#profibrotic AM
+           )
+new14=str_to_title(unique(new14))
+new14
+plot <- DotPlot(immune, features = new14)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker11.pdf",plot = plot,width = 8,height = 5)
+
+new15 <- c("CD14","LILRA5","H3F3B","CCR2","CD52","FOLR2","F13A1","LYVE1","CD163","MRC1","CLEC10A","STAB1","DAB2","SEPP1","IFITM3","BLVRB","C1QA","C1QC","CST3","CD36","PMP22","HMOX1","AHNAK","FCGR2B","C1QB","VSIG4","PLTP","CRIP1","S100A10",#RTMs
+           "IFRD1","CXCL2","IL1B","NLRP3","NFKBIA","CD74","JUNB","TNFAIP3","GADD45B","CCL3","CCL4","PPP1R15A","SRGN","IER3","RGS1","NR4A2","CLEC4E","ID2","HERPUD1","AREG","RILPL2",#infl-NLRP3
+           "TREM2","SPP1","CD9","ITGAX","SLAMF9","CH25H","CD72","GPNMB","ATP6V0D2","LIPA","FABP5","APOC1","APOE","LGALS3","CAPG","LPL","VIM","CSTB","ACP5","ANXA5","PLD3","FTH1","CTSD","PSAP","PLIN2","LSP1","FLNA","FABP4","LGALS1","CTSL"#Foamy
+           )#重点参考对象
+new15=str_to_title(unique(new15))
+new15
+plot <- DotPlot(immune, features = new15)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker12.pdf",plot = plot,width = 16,height = 5)
+
+
+##**分辨率1.0**
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+plot <- DimPlot(immune,reduction = "umap",label= F)
+ggsave(file = "AM_dimplot.pdf",plot = plot,width = 8,height = 6)
+
+### 巨噬细胞marker
+new1 <- c("S100A","FCNA","VCAN",#myeloid-derived suppressor cell/M-c1-THBS1
+          "APOE","C1QA","C1QB","TREM2","SLC40A1","GPNMB"#M-c2-C1QA
+          )
+new1=str_to_title(unique(new1))
+new1
+plot <- DotPlot(immune, features = new1)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker1.pdf",plot = plot,width = 5,height = 5)
+
+new3and4 <- c("TREM2","SPP1","FABP5","NUPR1",#TREM2+
+         "FOLR2","CD163","C1QB","SEPP1","LYVE1","MRC1",#FOLR2+
+         "MT1G","MT2A","MT1X"
+         )#无排他性
+new3and4=str_to_title(unique(new3and4))
+new3and4
+plot <- DotPlot(immune, features = new3and4)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker2.pdf",plot = plot,width = 6,height = 5)
+
+new5 <- c("FCNA","APOE","C1QB","SPP1",#SPP1+
+          "CXCL9","CD1E"#CXCL9+
+          )
+new5=str_to_title(unique(new5))
+new5
+plot <- DotPlot(immune, features = new5)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker3.pdf",plot = plot,width = 5,height = 5)
+
+MetaTime <- c("C1QB", "C1QA", "C1QC", "CTSD", #Mac-C1Q
+              "SPP1", "CSTB", "PLIN2", "LDHA", "MIF", "ENO1",#Mac-SPP1
+              "CTSB", "GPNMB", "FCER1G",#Mac-SPP1-C1Q
+              "APOC1", "APOE", "LGALS3", #Mac-lipid-PPARG
+              "CXCL8", "CXCL2", "CXCL3", "CXCL1", "NFKBIZ",#Mac-IL1-JUN
+              "RNASE1"#Mac-RNASE1-C1Q
+              )
+MetaTime=str_to_title(unique(MetaTime))
+MetaTime
+plot <- DotPlot(immune, features = MetaTime)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker4.pdf",plot = plot,width = 7,height = 5)
+
+new7_1 <- c("CIDEC","KRT79",#AM特异性
+            "SPP1","FN1",#促纤维化
+            "STMN1","TOP2A",#增殖
+            "JUN","S100A4"#促炎
+          )
+new7_1=str_to_title(unique(new7_1))
+new7_1
+plot <- DotPlot(immune, features = new7_1)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker5.pdf",plot = plot,width = 5,height = 5)
+
+new7_2 <- c("SPP1","FN1","TREM2",#Fabp5+Gpnmb+
+          "KRT79",#Lung resident AMs
+          "STMN1", "TOP2A",#CCL17- producing
+          "JUNB", "S100A4", "APOE",#Nr4a1+
+          "CENPF", "KIF23",#Fabp1-Car4-Krt79+Cidect+
+          "MCM3", "E2F1", "GMNN"#Fabp1+Car4+Krt79+Cidect+
+          )
+new7_2=str_to_title(unique(new7_2))
+new7_2
+plot <- DotPlot(immune, features = new7_2)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker6.pdf",plot = plot,width = 6,height = 5)
+
+new8and9 <- c("FCNA",#mono-mac
+          "FABP4","INHBA",#FABP4hi
+          "SPP1","MERTK","LGMN","SIGLEC10"#SPP1hi
+          )#可二分
+new8and9=str_to_title(unique(new8and9))
+new8and9
+plot <- DotPlot(immune, features = new8and9)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker7.pdf",plot = plot,width = 4,height = 5)
+
+new10and11 <- c("CD163","LGMN","MARCKS", "CD84", "OLFML2B", "MERTK", "GPNMB", "CTSB", "NPL", "CMKLR1", "MAF", "A2M", "SDC3", "PMP22", "LIPA", "PLA2G7", "ADAP2", "SPP1", "FMN1", "IDH1", "APOE", "SLAMF8", "HS3ST1", "MCP4", "TGFBI", "ECGF1", "CCL2", "CD14",#CD163/LGMN-AM
+           "MKI67","TOP2A","NUSAP1","BIRC5", "CENPA", "PPIC", "NUPR1", "S100A13"#proliferating-AM
+           )
+new10and11=str_to_title(unique(new10and11))
+new10and11
+plot <- DotPlot(immune, features = new10and11)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker8.pdf",plot = plot,width = 10,height = 5)
+
+new12 <- c("SPP1","SDC2","PLA2G7","SERPING1",#纤维化
+           "S100A8","S100A9",#促炎
+           "ABCA1"#lipid
+           )
+new12=str_to_title(unique(new12))
+new12
+plot <- DotPlot(immune, features = new12)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker9.pdf",plot = plot,width = 5,height = 5)
+
+new13 <- c("PPARG","MRC1","YM1","MARCKS","IL1RN","PLA2G7","MMP9","SPP1"#促纤维化
+           )
+new13=str_to_title(unique(new13))
+new13
+plot <- DotPlot(immune, features = new13)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker10.pdf",plot = plot,width = 5,height = 5)
+
+new14 <- c("IL1B","NFKBIA","NFKB1","CXCL2","CXCL3","CXCL8","CCL4","PTGS2","IL1A",#inflammatory AM
+           "LIPA","LPL","FDX1","SPP1","SPARC","MATK","GPC4","PALLD","CHI3L1","Gp39","CTSK","MMP9","MMP7","CSF1","FCMR","TIMP3","COL22A1","SIGLEC15","CCL22"#profibrotic AM
+           )
+new14=str_to_title(unique(new14))
+new14
+plot <- DotPlot(immune, features = new14)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker11.pdf",plot = plot,width = 8,height = 5)
+
+new15 <- c("CD14","LILRA5","H3F3B","CCR2","CD52","FOLR2","F13A1","LYVE1","CD163","MRC1","CLEC10A","STAB1","DAB2","SEPP1","IFITM3","BLVRB","C1QA","C1QC","CST3","CD36","PMP22","HMOX1","AHNAK","FCGR2B","C1QB","VSIG4","PLTP","CRIP1","S100A10",#RTMs
+           "IFRD1","CXCL2","IL1B","NLRP3","NFKBIA","CD74","JUNB","TNFAIP3","GADD45B","CCL3","CCL4","PPP1R15A","SRGN","IER3","RGS1","NR4A2","CLEC4E","ID2","HERPUD1","AREG","RILPL2",#infl-NLRP3
+           "TREM2","SPP1","CD9","ITGAX","SLAMF9","CH25H","CD72","GPNMB","ATP6V0D2","LIPA","FABP5","APOC1","APOE","LGALS3","CAPG","LPL","VIM","CSTB","ACP5","ANXA5","PLD3","FTH1","CTSD","PSAP","PLIN2","LSP1","FLNA","FABP4","LGALS1","CTSL"#Foamy
+           )#重点参考对象
+new15=str_to_title(unique(new15))
+new15
+plot <- DotPlot(immune, features = new15)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "macro_review_marker12.pdf",plot = plot,width = 16,height = 5)
+```
+
+# 4.调整后可视化
+```{r}
+##**大分类**
+Idents(sce.all) <- "Subset sub_celltype"
+table(sce.all@active.ident)
+new.cluster.ids <- c("Immune cell","Endothelial cell","Epithelial cell","Stroma cell","Immune cell","Immune cell","Immune cell","Immune cell")
+names(new.cluster.ids) <- levels(sce.all)
+sce.all <- RenameIdents(sce.all, new.cluster.ids)
+sce.all$celltype <- sce.all@active.ident
+table(sce.all@active.ident)
+color <- c("#b95055","#de8b36","#3ca0cf","#a992c0")
+plot <- DimPlot(sce.all, label= F,pt.size = 1,cols = color)+
+  NoLegend()+labs(x = "UMAP_1", y = "UMAP_2",title = "Celltype") +
+  theme(panel.border = element_rect(fill=NA,color="white", size=1, linetype="solid"),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+plot
+ggsave(file = "celltype_umap.pdf",plot = plot,width = 3,height = 3)
+
+##**细分类**
+Idents(sce.all) <- sce.all$celltype_final
+table(sce.all@active.ident)
+color1 <- c('#4b6aa8','#3ca0cf','#c376a7','#ad98c3','#cea5c7',
+            '#53738c','#a5a9b0','#a78982','#696a6c','#92699e',
+            '#d69971','#df5734','#6c408e','#ac6894','#d4c2db',
+            '#537eb7','#83ab8e','#ece399','#405993','#cc7f73',
+            '#b95055','#d5bb72','#bc9a7f','#e0cfda','#d8a0c0',
+            '#e6b884','#64a776','#cbdaa9','#efd2c9','#da6f6d',
+            '#c4daec','#61bada','#b7deea','#408444')
+plot1 <- DimPlot(sce.all, label= F,pt.size = 1,cols = color1)+
+  labs(x = "UMAP_1", y = "UMAP_2",title = "Celltype") +
+  theme(panel.border = element_rect(fill=NA,color="white", size=1, linetype="solid"),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+plot1
+ggsave(file = "subcelltype_umap.pdf",plot = plot1,width = 12,height = 6)
+
+#坐标轴
+axis <- ggh4x::guide_axis_truncated(
+    trunc_lower = unit(0, "npc"),
+    trunc_upper = unit(2, "cm")
+)
+plot2 <- DimPlot(sce.all, label= F,pt.size = 1,cols = color1)+
+  labs(x = "UMAP_1", y = "UMAP_2") +
+  theme(
+         aspect.ratio = 1,
+         panel.background = element_blank(),
+         panel.grid = element_blank(),
+         axis.line = element_line(arrow = arrow(type = "closed")),
+         axis.title = element_text(hjust = 0.05, face = "italic")) +
+    guides(color = FALSE, x = axis, y = axis) +
+    scale_x_continuous(breaks = NULL) +
+    scale_y_continuous(breaks = NULL)
+plot2
+ggsave(file = "subcelltype_umap_axis.pdf",plot = plot2,width = 12,height = 6)
+
+#**按照分组分别画图**
+Idents(sce.all) <- sce.all$celltype_final
+table(sce.all$sample)
+sce.all_CON <- subset(x = sce.all, sample == "Control")
+sce.all_ABX <- subset(x = sce.all, sample == "ABX")
+sce.all_PM <- subset(x = sce.all, sample == "PM")
+
+# Control
+axis <- ggh4x::guide_axis_truncated(
+    trunc_lower = unit(0, "npc"),
+    trunc_upper = unit(2, "cm")
+)
+plot2 <- DimPlot(sce.all_CON, label= F,pt.size = 0.1,cols = color1)+
+  labs(x = "UMAP_1", y = "UMAP_2") +
+  theme(
+         aspect.ratio = 1,
+         panel.background = element_blank(),
+         panel.grid = element_blank(),
+         axis.line = element_line(arrow = arrow(type = "closed")),
+         axis.title = element_text(hjust = 0.05, face = "italic")) +
+    guides(color = FALSE, x = axis, y = axis) +
+    scale_x_continuous(breaks = NULL) +
+    scale_y_continuous(breaks = NULL)
+plot2
+ggsave(file = "subcelltype_umap_control.pdf",plot = plot2,width = 12,height = 6)
+
+# ABX
+axis <- ggh4x::guide_axis_truncated(
+    trunc_lower = unit(0, "npc"),
+    trunc_upper = unit(2, "cm")
+)
+plot2 <- DimPlot(sce.all_ABX, label= F,pt.size = 0.1,cols = color1)+
+  labs(x = "UMAP_1", y = "UMAP_2") +
+  theme(
+         aspect.ratio = 1,
+         panel.background = element_blank(),
+         panel.grid = element_blank(),
+         axis.line = element_line(arrow = arrow(type = "closed")),
+         axis.title = element_text(hjust = 0.05, face = "italic")) +
+    guides(color = FALSE, x = axis, y = axis) +
+    scale_x_continuous(breaks = NULL) +
+    scale_y_continuous(breaks = NULL)
+plot2
+ggsave(file = "subcelltype_umap_ABX.pdf",plot = plot2,width = 12,height = 6)
+
+# PM
+axis <- ggh4x::guide_axis_truncated(
+    trunc_lower = unit(0, "npc"),
+    trunc_upper = unit(2, "cm")
+)
+plot2 <- DimPlot(sce.all_PM, label= F,pt.size = 0.1,cols = color1)+
+  labs(x = "UMAP_1", y = "UMAP_2") +
+  theme(
+         aspect.ratio = 1,
+         panel.background = element_blank(),
+         panel.grid = element_blank(),
+         axis.line = element_line(arrow = arrow(type = "closed")),
+         axis.title = element_text(hjust = 0.05, face = "italic")) +
+    guides(color = FALSE, x = axis, y = axis) +
+    scale_x_continuous(breaks = NULL) +
+    scale_y_continuous(breaks = NULL)
+plot2
+ggsave(file = "subcelltype_umap_PM.pdf",plot = plot2,width = 12,height = 6)
+```
+
+# 5.细胞比例
+```{r fig.width=26,fig.height=4}
+##**大分类**
+## 柱状图
+#按分组
+load("sce.all1.Rdata")
+Idents(sce.all) <- sce.all$`Subset sub_celltype`
+table(sce.all$sample)#查看各组细胞数
+prop.table(table(Idents(sce.all)))
+table(Idents(sce.all), sce.all$sample)#各组不同细胞群细胞数
+Cellratio <- prop.table(table(Idents(sce.all), sce.all$sample), margin = 2)#计算各组样本不同细胞群比例
+Cellratio <- as.data.frame(Cellratio)
+colnames(Cellratio) <- c("Celltype","Sample","Freq")
+color1 <- c('#4b6aa8','#c376a7','#a5a9b0','#d69971','#83ab8e','#ece399','#b95055','#e0cfda')
+colourCount = length(unique(Cellratio$Celltype))
+library(ggplot2)
+
+plot <- ggplot(Cellratio) + 
+  geom_bar(aes(x =Freq, y= Sample, fill = Celltype),stat = "identity",width = 0.7,size = 0.5, #colour = '#222222'
+           )+ 
+  theme_classic() +
+  labs(x='Ratio',y = 'Sample')+
+  scale_fill_manual(values = color1)+
+  coord_flip()+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))
+ggsave(file = "subcelltype_ratio.pdf",plot = plot,width = 5,height = 7)
+
+## 箱型图
+source("Singlecellratio_plotstat.R")
+my_comparisons <- list( c("PM","Control") )
+sce.all$celltype <- Idents(sce.all)
+#分组箱线图1
+plot <- Singlecellratio_plotstat(sce.all, group_by = "sample",
+                         meta.include = c("sample","orig.ident"),
+                         comparisons = my_comparisons, color_by = 'sample',
+                         group_by.point = "orig.ident",label.x = 1, pt.size = 1,
+                         label = 'p.format', ncol =8)
+ggsave(file = "subcelltype_box.pdf",plot = plot,width = 26,height = 4)
+
+##**细分类**
+## 柱状图
+#按分组
+Idents(sce.all) <- sce.all$celltype_final
+table(sce.all$sample)#查看各组细胞数
+prop.table(table(Idents(sce.all)))
+table(Idents(sce.all), sce.all$sample)#各组不同细胞群细胞数
+Cellratio <- prop.table(table(Idents(sce.all), sce.all$sample), margin = 2)#计算各组样本不同细胞群比例
+Cellratio <- as.data.frame(Cellratio)
+colnames(Cellratio) <- c("Celltype","Sample","Freq")
+write.csv(Cellratio,file = "Subcelltype_ratio.csv")
+color1 <- c('#4b6aa8','#3ca0cf','#c376a7','#ad98c3','#cea5c7',
+            '#53738c','#a5a9b0','#a78982','#696a6c','#92699e',
+            '#d69971','#df5734','#6c408e','#ac6894','#d4c2db',
+            '#537eb7','#83ab8e','#ece399','#405993','#cc7f73',
+            '#b95055','#d5bb72','#bc9a7f','#e0cfda','#d8a0c0',
+            '#e6b884','#64a776','#cbdaa9','#efd2c9','#da6f6d',
+            '#c4daec','#61bada','#b7deea','#408444')
+colourCount = length(unique(Cellratio$Celltype))
+library(ggplot2)
+
+plot <- ggplot(Cellratio) + 
+  geom_bar(aes(x =Freq, y= Sample, fill = Celltype),stat = "identity",width = 0.7,size = 0.5, #colour = '#222222'
+           )+ 
+  theme_classic() +
+  labs(x='Ratio',y = 'Sample')+
+  scale_fill_manual(values = color1)+
+  coord_flip()+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))
+ggsave(file = "finalcelltype_ratio.pdf",plot = plot,width = 7,height = 10)
+
+## 箱型图
+source("Singlecellratio_plotstat.R")
+my_comparisons <- list( c("PM","Control") )
+sce.all$celltype <- Idents(sce.all)
+#分组箱线图1
+plot <- Singlecellratio_plotstat(sce.all, group_by = "sample",
+                         meta.include = c("sample","orig.ident"),
+                         comparisons = my_comparisons, color_by = 'sample',
+                         group_by.point = "orig.ident",label.x = 1, pt.size = 1,
+                         label = 'p.format', ncol =11)
+ggsave(file = "finalcelltype_box.pdf",plot = plot,width = 36,height = 10)
+```
+
+# 6.AM各种评分
+```{r}
+library(AUCell)
+library(clusterProfiler)
+library(ggplot2)
+
+##**分辨率0.3**
+load(file = "AM.Rdata")
+Idents(immune) <- "RNA_snn_res.0.3"
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+
+## M1M2
+M1 <- c("FCGR3A","IL1B", "IL1A", "TNF", "IL6", "CXCL9", "CXCL10", "IL12A", "IL12B", "IL23A", "FCGR1A", "FCGR1B", "FCGR1C", "CCR7", "IL8", "CCL5", "HLA-DRA", "IRF5", "IRF1"#M1
+                      )
+M1 <- str_to_title(unique(M1))
+M1_features <- list(M1)
+
+M2 <- c("CD163", "MARCO", "MRC1", "IL10", "MSR1", "ARG1", "STAB1", "TGM2", "MMP7", "MMP9", "MMP19", "TGFB1", "TGFB2", "TGFB3", "VEGFA", "FN1", "CCL4", "CCL22", "CCL17", "CCL18", "IL4R", "IL7R", "IRF4"#M2
+        )
+M2 <- str_to_title(unique(M2))
+M2_features <- list(M2)
+
+M1score <- AddModuleScore(immune,
+                          features = M1_features,
+                          ctrl = 100,
+                          name = "M1_Features")
+colnames(M1score@meta.data)
+colnames(M1score@meta.data)[38] <- 'M1_Score' 
+#画小提琴
+plot <- VlnPlot(M1score,features = 'M1_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_M1AUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(M1score,features = 'M1_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_M1AUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+
+M2score <- AddModuleScore(immune,
+                          features = M2_features,
+                          ctrl = 100,
+                          name = "M2_Features")
+colnames(M2score@meta.data)
+colnames(M2score@meta.data)[38] <- 'M2_Score' 
+#画小提琴
+plot <- VlnPlot(M2score,features = 'M2_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_M2AUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(M2score,features = 'M2_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_M2AUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Tissue-resident like
+TRL <- c("Mrc1", "Lyve1", "Hes1", "Folr2", "Cd163l1", "Cd163")
+TRL_features <- list(TRL)
+
+TRLscore <- AddModuleScore(immune,
+                          features = TRL_features,
+                          ctrl = 100,
+                          name = "TRL_Features")
+colnames(TRLscore@meta.data)
+colnames(TRLscore@meta.data)[38] <- 'TRL_Score' 
+#画小提琴
+plot <- VlnPlot(TRLscore,features = 'TRL_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_TRLAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(TRLscore,features = 'TRL_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_TRLAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Pro-inflammatory
+PI <- c("Ccl3", "Ccl4", "Ccl20", "Il1b", "Cxcl1", "Cxcl2", "Cxcl3", "Cxcl5", "Areg", "Ereg", "Hbegf")
+PI_features <- list(PI)
+
+PIscore <- AddModuleScore(immune,
+                          features = PI_features,
+                          ctrl = 100,
+                          name = "PI_Features")
+colnames(PIscore@meta.data)
+colnames(PIscore@meta.data)[38] <- 'PI_Score' 
+#画小提琴
+plot <- VlnPlot(PIscore,features = 'PI_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_PIAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(PIscore,features = 'PI_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_PIAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Pro-angiogenic
+PA <- c("Vegfa", "Tek", "Sema4d", "Ang", "Angpt1")
+PA_features <- list(PA)
+
+PAscore <- AddModuleScore(immune,
+                          features = PA_features,
+                          ctrl = 100,
+                          name = "PA_Features")
+colnames(PAscore@meta.data)
+colnames(PAscore@meta.data)[38] <- 'PA_Score' 
+#画小提琴
+plot <- VlnPlot(PAscore,features = 'PA_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_PAAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(PAscore,features = 'PA_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_PAAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Lipid metabolism
+LM <- c("Trem2", "Lpl", "Fabp5", "Fabp4", "Ctsl", "Ctsd", "Ctsb", "Alox5ap", "Acp5")
+LM_features <- list(LM)
+
+LMscore <- AddModuleScore(immune,
+                          features = LM_features,
+                          ctrl = 100,
+                          name = "LM_Features")
+colnames(LMscore@meta.data)
+colnames(LMscore@meta.data)[38] <- 'LM_Score' 
+#画小提琴
+plot <- VlnPlot(LMscore,features = 'LM_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_LMAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(LMscore,features = 'LM_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_LMAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Interferon responsed
+IR <- c("Isg20", "Isg15", "Ifitm3", "Ifitm1", "Ifit3", "Ifit2", "Ifit1", "Ifi44l", "Cxcl9", "Cxcl11", "Cxcl10", "Casp4", "Casp1")
+IR_features <- list(IR)
+
+IRscore <- AddModuleScore(immune,
+                          features = IR_features,
+                          ctrl = 100,
+                          name = "IR_Features")
+colnames(IRscore@meta.data)
+colnames(IRscore@meta.data)[38] <- 'IR_Score' 
+#画小提琴
+plot <- VlnPlot(IRscore,features = 'IR_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_IRAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(IRscore,features = 'IR_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_IRAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Immune regulatory
+IRG <- c("Tgfb1", "Il10", "Ido1", "Icosl", "Cd86", "Cd80", "Cd40", "Cd274")
+IRG_features <- list(IRG)
+
+IRGscore <- AddModuleScore(immune,
+                          features = IRG_features,
+                          ctrl = 100,
+                          name = "IRG_Features")
+colnames(IRGscore@meta.data)
+colnames(IRGscore@meta.data)[38] <- 'IRG_Score' 
+#画小提琴
+plot <- VlnPlot(IRGscore,features = 'IRG_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_IRGAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(IRGscore,features = 'IRG_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_IRGAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Extracellular matrix remodelling
+EMR <- c("Spp1", "Sparc", "Mmp9", "Mmp7", "Mmp12")
+EMR_features <- list(EMR)
+
+EMRscore <- AddModuleScore(immune,
+                          features = EMR_features,
+                          ctrl = 100,
+                          name = "EMR_Features")
+colnames(EMRscore@meta.data)
+colnames(EMRscore@meta.data)[38] <- 'EMR_Score' 
+#画小提琴
+plot <- VlnPlot(EMRscore,features = 'EMR_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_EMRAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(EMRscore,features = 'EMR_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_EMRAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Proliferation
+PR <- c("Zwint", "Ube2t", "Ube2c", "Tyms", "Tubb5", "Tuba1b", "Tuba1a", "Top2a", "Tmpo", "Stmn1", "Smc4", "Smc2", "Rrm2", "Plk1", "Pcna", "Pclaf", "Nusap1", "Nuf2", "Nucks1", "Nucb2", "Mybl2", "Mki67", "Mcm6", "Mcm5", "Mcm4", "Mcm3", "Mcm2", "Kif2c", "Kif22", "Kif15", "Kif11", "Hmmr", "Hmgn2", "Hmgb2", "Hmgb1", "Foxm1", "Fen1", "E2f1", "Dek", "Cks1b", "Cenpw", "Cenpu", "Cenpn", "Cenpk", "Cenpf", "Cenpe", "Cdk1", "Ccne1", "Ccnd1", "Ccnb1", "Bub1b", "Bub1", "Birc5", "Aurka", "Aspm")
+PR_features <- list(PR)
+
+PRscore <- AddModuleScore(immune,
+                          features = PR_features,
+                          ctrl = 100,
+                          name = "PR_Features")
+colnames(PRscore@meta.data)
+colnames(PRscore@meta.data)[38] <- 'PR_Score' 
+#画小提琴
+plot <- VlnPlot(PRscore,features = 'PR_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_PRAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(PRscore,features = 'PR_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_PRAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Ferroptosis
+FER <- c("Acsl4", "Akr1c12", "Akr1c19", "Akr1c13", "Akr1c14", "Akr1c18", "Aloxe3", "Alox5", "Alox12", "Alox12b", "Alox8", "Atp5g3", "Cars", "Cbs", "Cd44", "Chac1", "Cisd1", "Dpp4", "Cs", "Fancd2", "Gclc", "Gclm", "Gls2", "Gss", "Hmgcr", "Hspb1", "Cryab", "Lpcat3", "Ncoa4", "Nfe2l2", "Ptgs2", "Rpl8", "Sat1", "Slc7a11", "Tfrc", "Trp53", "Emc2")
+FER_features <- list(FER)
+
+FERscore <- AddModuleScore(immune,
+                          features = FER_features,
+                          ctrl = 100,
+                          name = "FER_Features")
+colnames(FERscore@meta.data)
+colnames(FERscore@meta.data)[38] <- 'FER_Score' 
+#画小提琴
+plot <- VlnPlot(FERscore,features = 'FER_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_FERAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(FERscore,features = 'FER_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_FERAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+##**分辨率1.0**
+load(file = "AM.Rdata")
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6",
+                       "7" = "AM_7",
+                       "8" = "AM_8",
+                       "9" = "AM_9",
+                       "10" = "AM_10",
+                       "11" = "AM_11"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+
+## M1M2
+M1 <- c("FCGR3A","IL1B", "IL1A", "TNF", "IL6", "CXCL9", "CXCL10", "IL12A", "IL12B", "IL23A", "FCGR1A", "FCGR1B", "FCGR1C", "CCR7", "IL8", "CCL5", "HLA-DRA", "IRF5", "IRF1"#M1
+                      )
+M1 <- str_to_title(unique(M1))
+M1_features <- list(M1)
+
+M2 <- c("CD163", "MARCO", "MRC1", "IL10", "MSR1", "ARG1", "STAB1", "TGM2", "MMP7", "MMP9", "MMP19", "TGFB1", "TGFB2", "TGFB3", "VEGFA", "FN1", "CCL4", "CCL22", "CCL17", "CCL18", "IL4R", "IL7R", "IRF4"#M2
+        )
+M2 <- str_to_title(unique(M2))
+M2_features <- list(M2)
+
+M1score <- AddModuleScore(immune,
+                          features = M1_features,
+                          ctrl = 100,
+                          name = "M1_Features")
+colnames(M1score@meta.data)
+colnames(M1score@meta.data)[38] <- 'M1_Score' 
+#画小提琴
+plot <- VlnPlot(M1score,features = 'M1_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_M1AUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(M1score,features = 'M1_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_M1AUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+
+M2score <- AddModuleScore(immune,
+                          features = M2_features,
+                          ctrl = 100,
+                          name = "M2_Features")
+colnames(M2score@meta.data)
+colnames(M2score@meta.data)[38] <- 'M2_Score' 
+#画小提琴
+plot <- VlnPlot(M2score,features = 'M2_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_M2AUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(M2score,features = 'M2_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_M2AUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Tissue-resident like
+TRL <- c("Mrc1", "Lyve1", "Hes1", "Folr2", "Cd163l1", "Cd163")
+TRL_features <- list(TRL)
+
+TRLscore <- AddModuleScore(immune,
+                          features = TRL_features,
+                          ctrl = 100,
+                          name = "TRL_Features")
+colnames(TRLscore@meta.data)
+colnames(TRLscore@meta.data)[38] <- 'TRL_Score' 
+#画小提琴
+plot <- VlnPlot(TRLscore,features = 'TRL_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_TRLAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(TRLscore,features = 'TRL_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_TRLAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Pro-inflammatory
+PI <- c("Ccl3", "Ccl4", "Ccl20", "Il1b", "Cxcl1", "Cxcl2", "Cxcl3", "Cxcl5", "Areg", "Ereg", "Hbegf")
+PI_features <- list(PI)
+
+PIscore <- AddModuleScore(immune,
+                          features = PI_features,
+                          ctrl = 100,
+                          name = "PI_Features")
+colnames(PIscore@meta.data)
+colnames(PIscore@meta.data)[38] <- 'PI_Score' 
+#画小提琴
+plot <- VlnPlot(PIscore,features = 'PI_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_PIAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(PIscore,features = 'PI_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_PIAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Pro-angiogenic
+PA <- c("Vegfa", "Tek", "Sema4d", "Ang", "Angpt1")
+PA_features <- list(PA)
+
+PAscore <- AddModuleScore(immune,
+                          features = PA_features,
+                          ctrl = 100,
+                          name = "PA_Features")
+colnames(PAscore@meta.data)
+colnames(PAscore@meta.data)[38] <- 'PA_Score' 
+#画小提琴
+plot <- VlnPlot(PAscore,features = 'PA_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_PAAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(PAscore,features = 'PA_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_PAAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Lipid metabolism
+LM <- c("Trem2", "Lpl", "Fabp5", "Fabp4", "Ctsl", "Ctsd", "Ctsb", "Alox5ap", "Acp5")
+LM_features <- list(LM)
+
+LMscore <- AddModuleScore(immune,
+                          features = LM_features,
+                          ctrl = 100,
+                          name = "LM_Features")
+colnames(LMscore@meta.data)
+colnames(LMscore@meta.data)[38] <- 'LM_Score' 
+#画小提琴
+plot <- VlnPlot(LMscore,features = 'LM_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_LMAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(LMscore,features = 'LM_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_LMAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Interferon responsed
+IR <- c("Isg20", "Isg15", "Ifitm3", "Ifitm1", "Ifit3", "Ifit2", "Ifit1", "Ifi44l", "Cxcl9", "Cxcl11", "Cxcl10", "Casp4", "Casp1")
+IR_features <- list(IR)
+
+IRscore <- AddModuleScore(immune,
+                          features = IR_features,
+                          ctrl = 100,
+                          name = "IR_Features")
+colnames(IRscore@meta.data)
+colnames(IRscore@meta.data)[38] <- 'IR_Score' 
+#画小提琴
+plot <- VlnPlot(IRscore,features = 'IR_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_IRAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(IRscore,features = 'IR_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_IRAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Immune regulatory
+IRG <- c("Tgfb1", "Il10", "Ido1", "Icosl", "Cd86", "Cd80", "Cd40", "Cd274")
+IRG_features <- list(IRG)
+
+IRGscore <- AddModuleScore(immune,
+                          features = IRG_features,
+                          ctrl = 100,
+                          name = "IRG_Features")
+colnames(IRGscore@meta.data)
+colnames(IRGscore@meta.data)[38] <- 'IRG_Score' 
+#画小提琴
+plot <- VlnPlot(IRGscore,features = 'IRG_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_IRGAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(IRGscore,features = 'IRG_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_IRGAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Extracellular matrix remodelling
+EMR <- c("Spp1", "Sparc", "Mmp9", "Mmp7", "Mmp12")
+EMR_features <- list(EMR)
+
+EMRscore <- AddModuleScore(immune,
+                          features = EMR_features,
+                          ctrl = 100,
+                          name = "EMR_Features")
+colnames(EMRscore@meta.data)
+colnames(EMRscore@meta.data)[38] <- 'EMR_Score' 
+#画小提琴
+plot <- VlnPlot(EMRscore,features = 'EMR_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_EMRAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(EMRscore,features = 'EMR_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_EMRAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Proliferation
+PR <- c("Zwint", "Ube2t", "Ube2c", "Tyms", "Tubb5", "Tuba1b", "Tuba1a", "Top2a", "Tmpo", "Stmn1", "Smc4", "Smc2", "Rrm2", "Plk1", "Pcna", "Pclaf", "Nusap1", "Nuf2", "Nucks1", "Nucb2", "Mybl2", "Mki67", "Mcm6", "Mcm5", "Mcm4", "Mcm3", "Mcm2", "Kif2c", "Kif22", "Kif15", "Kif11", "Hmmr", "Hmgn2", "Hmgb2", "Hmgb1", "Foxm1", "Fen1", "E2f1", "Dek", "Cks1b", "Cenpw", "Cenpu", "Cenpn", "Cenpk", "Cenpf", "Cenpe", "Cdk1", "Ccne1", "Ccnd1", "Ccnb1", "Bub1b", "Bub1", "Birc5", "Aurka", "Aspm")
+PR_features <- list(PR)
+
+PRscore <- AddModuleScore(immune,
+                          features = PR_features,
+                          ctrl = 100,
+                          name = "PR_Features")
+colnames(PRscore@meta.data)
+colnames(PRscore@meta.data)[38] <- 'PR_Score' 
+#画小提琴
+plot <- VlnPlot(PRscore,features = 'PR_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_PRAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(PRscore,features = 'PR_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_PRAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+## Ferroptosis
+FER <- c("Acsl4", "Akr1c12", "Akr1c19", "Akr1c13", "Akr1c14", "Akr1c18", "Aloxe3", "Alox5", "Alox12", "Alox12b", "Alox8", "Atp5g3", "Cars", "Cbs", "Cd44", "Chac1", "Cisd1", "Dpp4", "Cs", "Fancd2", "Gclc", "Gclm", "Gls2", "Gss", "Hmgcr", "Hspb1", "Cryab", "Lpcat3", "Ncoa4", "Nfe2l2", "Ptgs2", "Rpl8", "Sat1", "Slc7a11", "Tfrc", "Trp53", "Emc2")
+FER_features <- list(FER)
+
+FERscore <- AddModuleScore(immune,
+                          features = FER_features,
+                          ctrl = 100,
+                          name = "FER_Features")
+colnames(FERscore@meta.data)
+colnames(FERscore@meta.data)[38] <- 'FER_Score' 
+#画小提琴
+plot <- VlnPlot(FERscore,features = 'FER_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_FERAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(FERscore,features = 'FER_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_FERAUC_sample.pdf",plot = plot,width = 10,height = 4)
+```
+
+# 7.AM细胞比例图
+```{r}
+##**分辨率0.3**
+load(file = "AM.Rdata")
+immune <- FindClusters(immune, resolution = 0.3) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+
+## 柱状图
+#按分组
+Idents(immune)
+table(immune$sample)#查看各组细胞数
+prop.table(table(Idents(immune)))
+table(Idents(immune), immune$sample)#各组不同细胞群细胞数
+Cellratio <- prop.table(table(Idents(immune), immune$sample), margin = 2)#计算各组样本不同细胞群比例
+Cellratio <- as.data.frame(Cellratio)
+colnames(Cellratio) <- c("Celltype","Sample","Freq")
+color1 <- c('#4b6aa8','#c376a7','#a5a9b0','#d69971','#83ab8e','#ece399','#b95055','#e0cfda')
+colourCount = length(unique(Cellratio$Celltype))
+library(ggplot2)
+
+plot <- ggplot(Cellratio) + 
+  geom_bar(aes(x =Freq, y= Sample, fill = Celltype),stat = "identity",width = 0.7,size = 0.5, #colour = '#222222'
+           )+ 
+  theme_classic() +
+  labs(x='Ratio',y = 'Sample')+
+  scale_fill_manual(values = color1)+
+  coord_flip()+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))
+ggsave(file = "AMcelltype_ratio_0.3.pdf",plot = plot,width = 4,height = 8)
+
+## 箱型图
+source("Singlecellratio_plotstat.R")
+my_comparisons <- list( c("PM","Control") )
+immune$celltype <- Idents(immune)
+#分组箱线图1
+plot <- Singlecellratio_plotstat(immune, group_by = "sample",
+                         meta.include = c("sample","orig.ident"),
+                         comparisons = my_comparisons, color_by = 'sample',
+                         group_by.point = "orig.ident",label.x = 1, pt.size = 1,
+                         label = 'p.format', ncol =8)
+ggsave(file = "AMcelltype_box_0.3.pdf",plot = plot,width = 20,height = 4)
+
+##**分辨率1.0**
+load(file = "AM.Rdata")
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6",
+                       "7" = "AM_7",
+                       "8" = "AM_8",
+                       "9" = "AM_9",
+                       "10" = "AM_10",
+                       "11" = "AM_11"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+## 柱状图
+#按分组
+Idents(immune)
+table(immune$sample)#查看各组细胞数
+prop.table(table(Idents(immune)))
+table(Idents(immune), immune$sample)#各组不同细胞群细胞数
+Cellratio <- prop.table(table(Idents(immune), immune$sample), margin = 2)#计算各组样本不同细胞群比例
+Cellratio <- as.data.frame(Cellratio)
+colnames(Cellratio) <- c("Celltype","Sample","Freq")
+write.csv(Cellratio,file = "AMcelltype_ratio.csv")
+color1 <- c('#4b6aa8','#3ca0cf','#c376a7','#ad98c3','#cea5c7',
+            '#53738c','#a5a9b0','#a78982','#696a6c','#92699e',
+            '#d69971','#df5734','#6c408e','#ac6894','#d4c2db',
+            '#537eb7','#83ab8e','#ece399','#405993','#cc7f73',
+            '#b95055','#d5bb72','#bc9a7f','#e0cfda','#d8a0c0',
+            '#e6b884','#64a776','#cbdaa9','#efd2c9','#da6f6d',
+            '#c4daec','#61bada','#b7deea','#408444')
+colourCount = length(unique(Cellratio$Celltype))
+library(ggplot2)
+
+plot <- ggplot(Cellratio) + 
+  geom_bar(aes(x =Freq, y= Sample, fill = Celltype),stat = "identity",width = 0.7,size = 0.5, #colour = '#222222'
+           )+ 
+  theme_classic() +
+  labs(x='Ratio',y = 'Sample')+
+  scale_fill_manual(values = color1)+
+  coord_flip()+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))
+ggsave(file = "AMcelltype_ratio_1.0.pdf",plot = plot,width = 7,height = 12)
+
+## 箱型图
+source("Singlecellratio_plotstat.R")
+my_comparisons <- list( c("PM","Control") )
+immune$celltype <- Idents(immune)
+#分组箱线图1
+plot <- Singlecellratio_plotstat(immune, group_by = "sample",
+                         meta.include = c("sample","orig.ident"),
+                         comparisons = my_comparisons, color_by = 'sample',
+                         group_by.point = "orig.ident",label.x = 1, pt.size = 1,
+                         label = 'p.format', ncol =6)
+ggsave(file = "AMcelltype_box_1.0.pdf",plot = plot,width = 18,height = 6)
+
+##**占总细胞比例**
+## 分辨率0.3
+load(file = "AM.Rdata")
+immune <- FindClusters(immune, resolution = 0.3) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+#还原回大群
+dim(immune) 
+dim(sce.all)
+table(Idents(immune))
+Idents(sce.all) <- sce.all$celltype_final
+table(Idents(sce.all))
+ 
+Idents(sce.all, cells = colnames(immune)) <- Idents(immune)
+DimPlot(sce.all,label = TRUE)
+
+source("Singlecellratio_plotstat.R")
+my_comparisons <- list( c("PM","Control") )
+sce.all$celltype <- Idents(sce.all)
+#分组箱线图1
+plot <- Singlecellratio_plotstat(sce.all, group_by = "sample",
+                         meta.include = c("sample","orig.ident"),
+                         comparisons = my_comparisons, color_by = 'sample',
+                         group_by.point = "orig.ident",label.x = 1, pt.size = 1,
+                         label = 'p.format', ncol =13)
+ggsave(file = "AM_ALLcelltype_box_0.3.pdf",plot = plot,width = 35,height = 9)
+
+## 分辨率1.0
+load(file = "AM.Rdata")
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6",
+                       "7" = "AM_7",
+                       "8" = "AM_8",
+                       "9" = "AM_9",
+                       "10" = "AM_10",
+                       "11" = "AM_11"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+#还原回大群
+dim(immune) 
+dim(sce.all)
+table(Idents(immune))
+Idents(sce.all) <- sce.all$celltype_final
+table(Idents(sce.all))
+ 
+Idents(sce.all, cells = colnames(immune)) <- Idents(immune)
+DimPlot(sce.all,label = TRUE)
+
+source("Singlecellratio_plotstat.R")
+my_comparisons <- list( c("PM","Control") )
+sce.all$celltype <- Idents(sce.all)
+#分组箱线图1
+plot <- Singlecellratio_plotstat(sce.all, group_by = "sample",
+                         meta.include = c("sample","orig.ident"),
+                         comparisons = my_comparisons, color_by = 'sample',
+                         group_by.point = "orig.ident",label.x = 1, pt.size = 1,
+                         label = 'p.format', ncol =11)
+ggsave(file = "AM_ALLcelltype_box_1.0.pdf",plot = plot,width = 35,height = 12)
+```
+
+# 8.内皮细胞比例图
+```{r}
+##**细胞比例**
+load("Endocell.Rdata")
+immune <- endo
+## 柱状图
+#按分组
+Idents(immune)
+table(immune$sample)#查看各组细胞数
+prop.table(table(Idents(immune)))
+table(Idents(immune), immune$sample)#各组不同细胞群细胞数
+Cellratio <- prop.table(table(Idents(immune), immune$sample), margin = 2)#计算各组样本不同细胞群比例
+Cellratio <- as.data.frame(Cellratio)
+colnames(Cellratio) <- c("Celltype","Sample","Freq")
+color1 <- c('#4b6aa8','#c376a7','#a5a9b0','#d69971','#83ab8e','#ece399','#b95055','#e0cfda')
+colourCount = length(unique(Cellratio$Celltype))
+library(ggplot2)
+
+plot <- ggplot(Cellratio) + 
+  geom_bar(aes(x =Freq, y= Sample, fill = Celltype),stat = "identity",width = 0.7,size = 0.5, #colour = '#222222'
+           )+ 
+  theme_classic() +
+  labs(x='Ratio',y = 'Sample')+
+  scale_fill_manual(values = color1)+
+  coord_flip()+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))
+ggsave(file = "endocelltype_ratio.pdf",plot = plot,width = 4,height = 8)
+
+## 箱型图
+source("Singlecellratio_plotstat.R")
+my_comparisons <- list( c("PM","Control") )
+immune$celltype <- Idents(immune)
+#分组箱线图1
+plot <- Singlecellratio_plotstat(immune, group_by = "sample",
+                         meta.include = c("sample","orig.ident"),
+                         comparisons = my_comparisons, color_by = 'sample',
+                         group_by.point = "orig.ident",label.x = 1, pt.size = 1,
+                         label = 'p.format', ncol =8)
+ggsave(file = "endocelltype_box.pdf",plot = plot,width = 16,height = 4)
+```
+
+# 9.基质细胞比例图
+```{r}
+##**细胞比例**
+load("Fibro.Rdata")
+## 柱状图## 
+#按分组
+Idents(immune)
+table(immune$sample)#查看各组细胞数
+prop.table(table(Idents(immune)))
+table(Idents(immune), immune$sample)#各组不同细胞群细胞数
+Cellratio <- prop.table(table(Idents(immune), immune$sample), margin = 2)#计算各组样本不同细胞群比例
+Cellratio <- as.data.frame(Cellratio)
+colnames(Cellratio) <- c("Celltype","Sample","Freq")
+color1 <- c('#4b6aa8','#c376a7','#a5a9b0','#d69971','#83ab8e','#ece399','#b95055','#e0cfda')
+colourCount = length(unique(Cellratio$Celltype))
+library(ggplot2)
+
+plot <- ggplot(Cellratio) + 
+  geom_bar(aes(x =Freq, y= Sample, fill = Celltype),stat = "identity",width = 0.7,size = 0.5, #colour = '#222222'
+           )+ 
+  theme_classic() +
+  labs(x='Ratio',y = 'Sample')+
+  scale_fill_manual(values = color1)+
+  coord_flip()+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))
+ggsave(file = "fibrocelltype_ratio.pdf",plot = plot,width = 4,height = 8)
+
+## 箱型图
+source("Singlecellratio_plotstat.R")
+my_comparisons <- list( c("PM","Control") )
+immune$celltype <- Idents(immune)
+#分组箱线图1
+plot <- Singlecellratio_plotstat(immune, group_by = "sample",
+                         meta.include = c("sample","orig.ident"),
+                         comparisons = my_comparisons, color_by = 'sample',
+                         group_by.point = "orig.ident",label.x = 1, pt.size = 1,
+                         label = 'p.format', ncol =8)
+ggsave(file = "fibrocelltype_box.pdf",plot = plot,width = 12,height = 4)
+```
+
+# 10.肺泡巨噬细胞拟时序分析(1.0分辨率):总的+三组分开跑
+```{r}
+rm(list = ls())
+library(monocle)
+library(Seurat)
+
+#**处理数据-Seurat数据**
+load(file = "AM.Rdata")
+Macro <- immune
+table(Idents(Macro))
+Macro = RenameIdents(Macro,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6",
+                       "7" = "AM_7",
+                       "8" = "AM_8",
+                       "9" = "AM_9",
+                       "10" = "AM_10",
+                       "11" = "AM_11"
+                       )
+Macro$celltype <- Macro@active.ident
+table(Macro$celltype)
+
+macro_ABX <- subset(x = Macro, sample == "ABX")
+macro_Control <- subset(x = Macro, sample == "Control")
+macro_PM <- subset(x = Macro, sample == "PM")
+
+table(Macro$celltype)
+Idents(Macro) <- "celltype"
+ob1 <- subset(x = macro_Control, downsample = 2000)
+table(ob1$celltype)
+sce.all = ob1
+
+#monocle构建CDS需要3个矩阵：expr.matrix、pd、featuredata
+#表达矩阵信息、基因信息和表型信息
+#提取表型信息--细胞信息(建议载入细胞的聚类或者细胞类型鉴定信息，实验条件等信息)
+sce.all <- ob1
+expr_matrix <-  as(as.matrix(sce.all@assays$RNA@counts),"sparseMatrix")
+#提取表型的信息到p_data(phenotype_data)里面
+p_data <- sce.all@meta.data
+p_data$celltype <- sce.all@active.ident
+#提取基因信息 如生物类型 gc含量等
+f_data <- data.frame(gene_short_name = rownames(sce.all),
+                       row.names = rownames(sce.all))
+##expr_matrix的行数与f_data的行数相同(gene number)
+##expr_matrix的列数与p_data的行数相同(cell number)
+
+#构建CDS对象
+pd <- new("AnnotatedDataFrame",data = p_data)
+fd <- new("AnnotatedDataFrame",data = f_data)
+#将p_data和f_data从data.frame转换为AnnotatedDataFrame对象
+
+#**monocle**
+## 利用Seurat数据创建monocle对象
+cds <- newCellDataSet(expr_matrix,
+                      phenoData = pd,
+                      featureData = fd,
+                      lowerDetectionLimit = 0.1,
+                      expressionFamily = VGAM::negbinomial.size())
+##**估计size factor和离散度**
+cds <- estimateSizeFactors(cds)
+library(dplyr)
+cds <- estimateDispersions(cds)
+
+##**过滤低质量的细胞**
+cds <- detectGenes(cds, min_expr = 0.1)
+#这一操作会在fData(cds)中添加一列num_cells_expressed
+print(head(fData(cds)))
+expressed_genes <- row.names(subset(fData(cds),num_cells_expressed >= 10))
+##过滤掉小于在10个细胞中表达的基因
+
+##**轨迹定义基因选择**
+### step1：选择定义过程的基因
+diff <- differentialGeneTest(cds[expressed_genes,],fullModelFormulaStr = "~celltype",cores = 1)
+##差异表达基因作为轨迹构建的基因，差异基因的选择标准是qval<0.01,decreasing = F表示按照数值增加进行排序
+deg <- subset(diff, qval < 0.01) #选择基因数量
+deg <- deg[order(deg$qval,decreasing = F),]
+head(deg)
+#基因数量太多的话可以选择top基因
+ordergene <- rownames(deg)
+ordergene <- row.names(deg)[order(deg$qval)][1:2000]
+#保存差异基因的结果
+write.table(deg, file = "IPF.monocle.DEG.xls", col.names = T, row.names = F, sep = "\t", quote = F)
+#筛选出轨迹基因以后进行可视化
+cds <- setOrderingFilter(cds, ordergene)
+#这一步很重要，在我们得到想要的基因列表以后，我们需要设置setOrderingFilter将基因嵌入到cds的对象中去，后续一系列操作都依靠这个list
+#setOrderingFilter之后，这些基因都被存储在cds@featureData@data[["use_for_ordering"]],可以通过
+#table(cds@featureData@data[["use_for_ordering"]])查看
+pdf("train.ordergenes.pdf")
+plot_ordering_genes(cds)
+dev.off()
+### step2：降维
+cds <- reduceDimension(cds, max_components = 2, method = "DDRTree")
+save(cds,file = "origcds_ALL.Rdata")
+
+### step3：拟时间轨迹构建和在拟时间内排列细胞
+cds <- orderCells(cds)
+save(cds,file = "cds.Control.Rdata")
+load("cds.PM.Rdata")
+#如果已经知道哪里是根的话，可以通过root_state = ?参数进行设置。
+cds <- orderCells(cds, 
+                  root_state = 2
+                  )
+
+##**可视化**
+load("cds.Control.Rdata")
+### 详见拟时序分析
+```
+
+# 11.AM相关图
+```{r}
+##**分辨率0.3**
+## umap
+load("AM.Rdata")
+table(immune@meta.data$RNA_snn_res.0.3)#根据聚类树选择0.3进行初步聚类
+immune <- FindClusters(immune, resolution = 0.3) #分辨率
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6"
+                       )
+immune$celltype <- Idents(immune)
+plot <- DimPlot(immune,reduction = "umap",label= T)
+ggsave(file = "AM0.3_dimplot_label.pdf",plot = plot,width = 6,height = 4)
+
+AM_PM <- subset(immune,sample == "PM")
+AM_Control <- subset(immune,sample == "Control")
+AM_ABX <- subset(immune,sample == "ABX")
+
+plot <- DimPlot(AM_PM,reduction = "umap",label= T)
+ggsave(file = "AM0.3_dimplot_label_PM.pdf",plot = plot,width = 6,height = 4)
+plot <- DimPlot(AM_Control,reduction = "umap",label= T)
+ggsave(file = "AM0.3_dimplot_label_Control.pdf",plot = plot,width = 6,height = 4)
+plot <- DimPlot(AM_ABX,reduction = "umap",label= T)
+ggsave(file = "AM0.3_dimplot_label_ABX.pdf",plot = plot,width = 6,height = 4)
+
+##marker dimplot
+color <- c('#cc7f73',"#86c7b4","#3ca0cf","#a992c0",'#de8b36','#94c58f','#f2c396','#d4de9c','#ea9994','#9cd2ed')
+marker <- c("Eno1","Fcer1g","Cxcl2","Cxcl1","Nfkbiz","Krt79","Junb",#1
+            "Trem2","Gpnmb","Fabp5","Plin2","Ctsb","Lgals3","Fabp4","Lgmn","Cd84",#2
+            "Ctsd","Jun","Mertk","Pparg",#3
+            "Spp1","Mrc1","Ldha","Mcm3","E2f1",#4
+            "Stmn1","Top2a","Cenpf","Kif23","Mki67","Nusap1","Birc5"#6
+            )
+
+p <- DotPlot(immune, features = marker,
+             cols = color, group.by = "celltype", 
+             #split.by = "orig.ident"
+             )+coord_flip()
+exp <- p$data
+library(forcats)
+exp$features.plot <- as.factor(exp$features.plot)
+exp$features.plot <- fct_inorder(exp$features.plot)
+
+#exp$id <- factor(exp$id,levels = c("Fibrotic/foamy AM","Fibrotic/proliferating AM","IL1B-inflammatory AM","JUN-inflammatory AM","Lung resident macrophage") )
+p2 <- ggplot(exp,aes(x=features.plot,y= id))+
+  geom_point(aes(size=`pct.exp`,
+                 color=`avg.exp.scaled`))+theme_bw()+
+  theme(panel.grid = element_blank(),
+        axis.text.x=element_text(angle=90,hjust = 1,vjust=0.5))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#6699CC','lightyellow','#CC3333'))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  theme(legend.direction = "vertical", legend.position = "right")+
+  theme(text=element_text(size= 12 ), #change font size of all text
+        axis.text = element_text(size= 12 ), #change font size of axis text
+        axis.title = element_text(size= 12 ), #change font size of axis titles
+        plot.title = element_text(size= 12 ), #change font size of plot title
+        legend.text = element_text(size= 12 ), #change font size of legend text
+        legend.title = element_text(size= 12 )
+    ) #change font size of legend title
+p2
+ggsave(file = "AMcelltype_0.3_marker.pdf",plot = p2,width = 8,height = 4)
+
+##**分辨率1.0**
+## umap
+load("AM.Rdata")
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6",
+                       "7" = "AM_7",
+                       "8" = "AM_8",
+                       "9" = "AM_9",
+                       "10" = "AM_10",
+                       "11" = "AM_11"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+plot <- DimPlot(immune,reduction = "umap",label= T)
+ggsave(file = "AM1.0_dimplot_label.pdf",plot = plot,width = 6,height = 4)
+
+AM_PM <- subset(immune,sample == "PM")
+AM_Control <- subset(immune,sample == "Control")
+AM_ABX <- subset(immune,sample == "ABX")
+
+plot <- DimPlot(AM_PM,reduction = "umap",label= T)
+ggsave(file = "AM1.0_dimplot_label_PM.pdf",plot = plot,width = 6,height = 4)
+plot <- DimPlot(AM_Control,reduction = "umap",label= T)
+ggsave(file = "AM1.0_dimplot_label_Control.pdf",plot = plot,width = 6,height = 4)
+plot <- DimPlot(AM_ABX,reduction = "umap",label= T)
+ggsave(file = "AM1.0_dimplot_label_ABX.pdf",plot = plot,width = 6,height = 4)
+
+##marker dimplot
+color <- c('#cc7f73',"#86c7b4","#3ca0cf","#a992c0",'#de8b36','#94c58f','#f2c396','#d4de9c','#ea9994','#9cd2ed')
+marker <- c("Trem2","Gpnmb","Fabp5","Plin2","Ctsb","Lgals3","Fabp4","Lgmn","Cd84",#2
+            "Cxcl2","Cxcl1","Nfkbiz","Junb","Cd14",#3
+            "Ctsd","Jun","Mertk","Pparg",#4
+            "Cidec",#5
+            "Mrc1","Mcm3","E2f1",#6
+            "Spp1","Ldha","Eno1",#8
+            "Fcer1g","S100a13",#9
+            "Stmn1","Top2a","Cenpf","Kif23","Gmnn","Mki67","Nusap1","Birc5",#10
+            "Cxcl9","Nupr1","Mif","Cxcl3","Krt79","Fn1","Il1rn"#11
+            )
+
+p <- DotPlot(immune, features = marker,
+             cols = color, group.by = "celltype", 
+             #split.by = "orig.ident"
+             )+coord_flip()
+exp <- p$data
+library(forcats)
+exp$features.plot <- as.factor(exp$features.plot)
+exp$features.plot <- fct_inorder(exp$features.plot)
+
+#exp$id <- factor(exp$id,levels = c("Fibrotic/foamy AM","Fibrotic/proliferating AM","IL1B-inflammatory AM","JUN-inflammatory AM","Lung resident macrophage") )
+p2 <- ggplot(exp,aes(x=features.plot,y= id))+
+  geom_point(aes(size=`pct.exp`,
+                 color=`avg.exp.scaled`))+theme_bw()+
+  theme(panel.grid = element_blank(),
+        axis.text.x=element_text(angle=90,hjust = 1,vjust=0.5))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#6699CC','lightyellow','#CC3333'))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  theme(legend.direction = "vertical", legend.position = "right")+
+  theme(text=element_text(size= 12 ), #change font size of all text
+        axis.text = element_text(size= 12 ), #change font size of axis text
+        axis.title = element_text(size= 12 ), #change font size of axis titles
+        plot.title = element_text(size= 12 ), #change font size of plot title
+        legend.text = element_text(size= 12 ), #change font size of legend text
+        legend.title = element_text(size= 12 )
+    ) #change font size of legend title
+p2
+ggsave(file = "AMcelltype_1.0_marker.pdf",plot = p2,width = 12,height = 4)
+```
+
+# 12.内皮细胞&基质洗细胞
+```{r}
+##**endocell**
+load("Endocell.Rdata")
+table(Idents(endo))
+endo$celltype <- Idents(endo)
+plot <- DimPlot(endo,reduction = "umap",label= T)
+ggsave(file = "endo_dimplot_label.pdf",plot = plot,width = 6,height = 4)
+
+AM_PM <- subset(endo,sample == "PM")
+AM_Control <- subset(endo,sample == "Control")
+AM_ABX <- subset(endo,sample == "ABX")
+
+plot <- DimPlot(AM_PM,reduction = "umap",label= T)
+ggsave(file = "endo_dimplot_label_PM.pdf",plot = plot,width = 6,height = 4)
+plot <- DimPlot(AM_Control,reduction = "umap",label= T)
+ggsave(file = "endo_dimplot_label_Control.pdf",plot = plot,width = 6,height = 4)
+plot <- DimPlot(AM_ABX,reduction = "umap",label= T)
+ggsave(file = "endo_dimplot_label_ABX.pdf",plot = plot,width = 6,height = 4)
+
+##**stroma**
+load("Fibro.Rdata")
+table(Idents(immune))
+immune$celltype <- Idents(immune)
+plot <- DimPlot(immune,reduction = "umap",label= T)
+ggsave(file = "fibro_dimplot_label.pdf",plot = plot,width = 6,height = 4)
+
+AM_PM <- subset(immune,sample == "PM")
+AM_Control <- subset(immune,sample == "Control")
+AM_ABX <- subset(immune,sample == "ABX")
+
+plot <- DimPlot(AM_PM,reduction = "umap",label= T)
+ggsave(file = "fibro_dimplot_label_PM.pdf",plot = plot,width = 6,height = 4)
+plot <- DimPlot(AM_Control,reduction = "umap",label= T)
+ggsave(file = "fibro_dimplot_label_Control.pdf",plot = plot,width = 6,height = 4)
+plot <- DimPlot(AM_ABX,reduction = "umap",label= T)
+ggsave(file = "fibro_dimplot_label_ABX.pdf",plot = plot,width = 6,height = 4)
+```
+
+# 2025-3-22 AM 1.0分辨率+AUC
+```{r}
+##**分辨率1.0**
+load(file = "AM.Rdata")
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6",
+                       "7" = "AM_7",
+                       "8" = "AM_8",
+                       "9" = "AM_9",
+                       "10" = "AM_10",
+                       "11" = "AM_11"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+
+##**M1**
+M1 <- c("FCGR3A","IL1B", "IL1A", "TNF", "IL6", "CXCL9", "CXCL10", "IL12A", "IL12B", "IL23A", "FCGR1A", "FCGR1B", "FCGR1C", "CCR7", "IL8", "CCL5", "HLA-DRA", "IRF5", "IRF1"#M1
+                      )
+M1 <- str_to_title(unique(M1))
+M1_features <- list(M1)
+M1score <- AddModuleScore(immune,
+                          features = M1_features,
+                          ctrl = 100,
+                          name = "M1_Features")
+colnames(M1score@meta.data)
+colnames(M1score@meta.data)[38] <- 'M1_Score' 
+#画小提琴
+plot <- VlnPlot(M1score,features = 'M1_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_M1AUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(M1score,features = 'M1_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_M1AUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+##**Pro-inflammatory**
+PI <- c("Ccl3", "Ccl4", "Ccl20", "Il1b", "Cxcl1", "Cxcl2", "Cxcl3", "Cxcl5", "Areg", "Ereg", "Hbegf")
+PI_features <- list(PI)
+
+PIscore <- AddModuleScore(immune,
+                          features = PI_features,
+                          ctrl = 100,
+                          name = "PI_Features")
+colnames(PIscore@meta.data)
+colnames(PIscore@meta.data)[38] <- 'PI_Score' 
+#画小提琴
+plot <- VlnPlot(PIscore,features = 'PI_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_PIAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(PIscore,features = 'PI_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_PIAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+##**Lipid metabolism**
+LM <- c("Trem2", "Lpl", "Fabp5", "Fabp4", "Ctsl", "Ctsd", "Ctsb", "Alox5ap", "Acp5")
+LM_features <- list(LM)
+
+LMscore <- AddModuleScore(immune,
+                          features = LM_features,
+                          ctrl = 100,
+                          name = "LM_Features")
+colnames(LMscore@meta.data)
+colnames(LMscore@meta.data)[38] <- 'LM_Score' 
+#画小提琴
+plot <- VlnPlot(LMscore,features = 'LM_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_LMAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(LMscore,features = 'LM_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_LMAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+##**Extracellular matrix remodelling**
+EMR <- c("Spp1", "Sparc", "Mmp9", "Mmp7", "Mmp12")
+EMR_features <- list(EMR)
+
+EMRscore <- AddModuleScore(immune,
+                          features = EMR_features,
+                          ctrl = 100,
+                          name = "EMR_Features")
+colnames(EMRscore@meta.data)
+colnames(EMRscore@meta.data)[38] <- 'EMR_Score' 
+#画小提琴
+plot <- VlnPlot(EMRscore,features = 'EMR_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_EMRAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(EMRscore,features = 'EMR_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_EMRAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+##**Proliferation**
+PR <- c("Zwint", "Ube2t", "Ube2c", "Tyms", "Tubb5", "Tuba1b", "Tuba1a", "Top2a", "Tmpo", "Stmn1", "Smc4", "Smc2", "Rrm2", "Plk1", "Pcna", "Pclaf", "Nusap1", "Nuf2", "Nucks1", "Nucb2", "Mybl2", "Mki67", "Mcm6", "Mcm5", "Mcm4", "Mcm3", "Mcm2", "Kif2c", "Kif22", "Kif15", "Kif11", "Hmmr", "Hmgn2", "Hmgb2", "Hmgb1", "Foxm1", "Fen1", "E2f1", "Dek", "Cks1b", "Cenpw", "Cenpu", "Cenpn", "Cenpk", "Cenpf", "Cenpe", "Cdk1", "Ccne1", "Ccnd1", "Ccnb1", "Bub1b", "Bub1", "Birc5", "Aurka", "Aspm")
+PR_features <- list(PR)
+
+PRscore <- AddModuleScore(immune,
+                          features = PR_features,
+                          ctrl = 100,
+                          name = "PR_Features")
+colnames(PRscore@meta.data)
+colnames(PRscore@meta.data)[38] <- 'PR_Score' 
+#画小提琴
+plot <- VlnPlot(PRscore,features = 'PR_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_PRAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(PRscore,features = 'PR_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_PRAUC_sample.pdf",plot = plot,width = 10,height = 4)
+
+##**Ferroptosis**
+FER <- c("Acsl4", "Akr1c12", "Akr1c19", "Akr1c13", "Akr1c14", "Akr1c18", "Aloxe3", "Alox5", "Alox12", "Alox12b", "Alox8", "Atp5g3", "Cars", "Cbs", "Cd44", "Chac1", "Cisd1", "Dpp4", "Cs", "Fancd2", "Gclc", "Gclm", "Gls2", "Gss", "Hmgcr", "Hspb1", "Cryab", "Lpcat3", "Ncoa4", "Nfe2l2", "Ptgs2", "Rpl8", "Sat1", "Slc7a11", "Tfrc", "Trp53", "Emc2")
+FER_features <- list(FER)
+
+FERscore <- AddModuleScore(immune,
+                          features = FER_features,
+                          ctrl = 100,
+                          name = "FER_Features")
+colnames(FERscore@meta.data)
+colnames(FERscore@meta.data)[38] <- 'FER_Score' 
+#画小提琴
+plot <- VlnPlot(FERscore,features = 'FER_Score', pt.size = 0, adjust = 2)
+plot
+ggsave(file = "AMcelltype_FERAUC.pdf",plot = plot,width = 8,height = 4)
+plot <- VlnPlot(FERscore,features = 'FER_Score', pt.size = 0, adjust = 2,split.by = "sample")
+plot
+ggsave(file = "AMcelltype_FERAUC_sample.pdf",plot = plot,width = 10,height = 4)
+```
+
+# 2025-3-23 内皮细胞差异基因分析
+```{r}
+load("Endocell.Rdata")
+DimPlot(endo,reduction = "umap", label =T)
+
+##**查看细胞类群**
+endo$endocelltype <- Idents(endo)
+table(endo$endocelltype)
+
+##**CapECs是否有气体交换相关的gene**(后续再探讨)
+CapECs <- subset(endo, endocelltype=="CapECs")
+diff_CapECs <- FindMarkers(CapECs, min.pct = 0, 
+                           logfc.threshold = 0,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+
+##**计算每个细胞类群的差异marker**
+AECs <- subset(endo, endocelltype=="AECs")
+diff_AECs <- FindMarkers(AECs, min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+diff_AECs$label <- ifelse(diff_AECs$p_val_adj<0.01,"adjust P-val<0.01","adjust P-val>=0.01")
+table(diff_AECs$label)
+
+CapECs <- subset(endo, endocelltype=="CapECs")
+diff_CapECs <- FindMarkers(CapECs, min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+diff_CapECs$label <- ifelse(diff_CapECs$p_val_adj<0.01,"adjust P-val<0.01","adjust P-val>=0.01")
+table(diff_CapECs$label)
+
+LECs <- subset(endo, endocelltype=="LECs")
+diff_LECs <- FindMarkers(LECs, min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+diff_LECs$label <- ifelse(diff_LECs$p_val_adj<0.01,"adjust P-val<0.01","adjust P-val>=0.01")
+table(diff_LECs$label)
+
+PECs <- subset(endo, endocelltype=="PECs")
+diff_PECs <- FindMarkers(PECs, min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+diff_PECs$label <- ifelse(diff_PECs$p_val_adj<0.01,"adjust P-val<0.01","adjust P-val>=0.01")
+table(diff_PECs$label)
+
+VECs <- subset(endo, endocelltype=="VECs")
+diff_VECs <- FindMarkers(VECs, min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+diff_AECs$label <- ifelse(diff_AECs$p_val_adj<0.01,"adjust P-val<0.01","adjust P-val>=0.01")
+table(diff_AECs$label)
+
+##**多组火山图**（没处理完）
+diff_AECs$celltype <- "AECs"
+diff_CapECs$celltype <- "CapECs"
+diff_LECs$celltype <- "LECs"
+diff_PECs$celltype <- "PECs"
+diff_VECs$celltype <- "VECs"
+diff_cell<-rbind(diff_AECs,diff_CapECs,diff_LECs,diff_PECs,diff_VECs)
+diff_cell$GENE <- rownames(diff_cell)
+head(diff_cell)
+
+#显著性
+diff_cell$label <- ifelse(diff_cell$p_val_adj<0.01,"adjust P-val<0.01","adjust P-val>=0.01")
+top10_AECs <- filter(diff_cell,celltype=="AECs") %>% 
+  distinct(GENE,.keep_all = T) %>% 
+  top_n(10,abs(avg_log2FC))
+top10_CapECs <- filter(diff_cell,celltype=="CapECs") %>% 
+  distinct(GENE,.keep_all = T) %>% 
+  top_n(10,abs(avg_log2FC))
+top10_LECs <- filter(diff_cell,celltype=="LECs") %>% 
+  distinct(GENE,.keep_all = T) %>% 
+  top_n(10,abs(avg_log2FC))
+top10_PECs <- filter(diff_cell,celltype=="PECs") %>% 
+  distinct(GENE,.keep_all = T) %>% 
+  top_n(10,abs(avg_log2FC))
+top10_VECs <- filter(diff_cell,celltype=="VECs") %>% 
+  distinct(GENE,.keep_all = T) %>% 
+  top_n(10,abs(avg_log2FC))
+
+top10 <- rbind(top10_AECs,top10_CapECs,top10_LECs,top10_PECs,
+               top10_VECs)
+diff_cell$size <- case_when(!(diff_cell$GENE %in% top10$GENE)~ 1,
+                            diff_cell$GENE %in% top10$GENE ~ 2)
+write.table(diff_cell,"endo_diff_cell_PMvsABX.csv",row.names=FALSE,col.names=TRUE,sep=",")
+write.table(top10,"endo_top10_PMvsABX.csv",row.names=FALSE,col.names=TRUE,sep=",")
+
+#提取非Top10的基因表格；
+dt <- filter(diff_cell,size==1)
+head(dt)
+
+
+p <- ggplot()+
+  geom_jitter(data = dt,
+              aes(x = celltype, y = avg_log2FC, color = label),
+              size = 0.85,
+              width =0.4)+
+  geom_jitter(data = top10,
+              aes(x = celltype, y = avg_log2FC, color = label),
+              size = 1,
+              width =0.4)
+p
+
+#根据图p中log2FC区间确定背景柱长度：
+dfbar<-data.frame(x=c("Alveolar epithelium","Airway epithelium","Blood vessel","Fibroblast lineage",
+                      "Lymphatic EC","Lymphoid","Myeloid","Smooth muscle"),
+                  y=c(3.8,3.0,2.8,1.7,1.8,1.5,2.4,3.5))
+dfbar1<-data.frame(x=c("Alveolar epithelium","Airway epithelium","Blood vessel","Fibroblast lineage",
+                      "Lymphatic EC","Lymphoid","Myeloid","Smooth muscle"),
+                   y=c(-1.5,-5.2,-2.2,-2.4,-2.4,-3.8,-1.8,-2.6))
+
+#绘制背景柱：
+p1 <- ggplot()+
+  geom_col(data = dfbar,
+           mapping = aes(x = x,y = y),
+           fill = "#dcdcdc",alpha = 0.6)+
+  geom_col(data = dfbar1,
+           mapping = aes(x = x,y = y),
+           fill = "#dcdcdc",alpha = 0.6)
+
+p2 <- ggplot()+
+  geom_col(data = dfbar,
+           mapping = aes(x = x,y = y),
+           fill = "#dcdcdc",alpha = 0.6)+
+  geom_col(data = dfbar1,
+           mapping = aes(x = x,y = y),
+           fill = "#dcdcdc",alpha = 0.6)+
+  geom_jitter(data = dt,
+              aes(x = celltype, y = avg_log2FC, color = label),
+              size = 0.85,
+              width =0.4)+
+  geom_jitter(data = top10,
+              aes(x = celltype, y = avg_log2FC, color = label),
+              size = 1,
+              width =0.4)
+
+#添加X轴的cluster色块标签：
+dfcol<-data.frame(x=c("Alveolar epithelium","Airway epithelium","Blood vessel","Fibroblast lineage",
+                      "Lymphatic EC","Lymphoid","Myeloid","Smooth muscle"),
+                  y=0,
+                  label=c("Alveolar epithelium","Airway epithelium","Blood vessel","Fibroblast lineage",
+                      "Lymphatic EC","Lymphoid","Myeloid","Smooth muscle"))
+mycol <- c("#E64B357F","#00A0877F","#84B1ED","#F39B7F7F",'#F3B1A0', '#D6E7A3', '#57C3F3', '#476D87')
+p3 <- p2 + geom_tile(data = dfcol,
+                     aes(x=x,y=y),
+                     height=0.42,
+                     color = "black",
+                     fill = mycol,
+                     alpha = 0.6,
+                     show.legend = F)
+p3
+
+library(ggrepel)
+#给每个Cluster差异表达前Top10基因加上标签：
+p4 <- p2 + geom_tile(data = dfcol,
+                     aes(x=x,y=y),
+                     height=0.42,
+                     color = "black",
+                     fill = mycol,
+                     alpha = 0.6,
+                     show.legend = F)+
+  geom_text_repel(
+    data=top10,
+    aes(x=celltype,y=avg_log2FC,label=GENE),
+    size =3,
+    arrow = arrow(length = unit(0.008, "npc"),
+                  type = "open", ends = "last")
+  )
+p4
+
+p5 <- p4 +
+  scale_color_manual(name=NULL,
+                     values = c("red","black"))
+p5
+
+p6 <- p4+
+  labs(x="celltype",y="avg_log2FC")+
+  geom_text(data=dfcol,
+            aes(x=x,y=y,label=label),
+            size =3,
+            color ="white")
+p6
+
+p7 <- p4 +
+  scale_color_manual(name=NULL,
+                     values = c("#CC3333","grey"))+
+  labs(x="celltype",y="avg_log2FC")+
+  geom_text(data=dfcol,
+            aes(x=x,y=y,label=label),
+            size =3,
+            color ="white")+
+  theme_minimal()+
+  theme(
+    axis.title = element_text(size = 12,
+                              color = "black",
+                              face = "bold"),
+    axis.line.y = element_line(color = "black",
+                               size = 0.8),
+    axis.line.x = element_blank(),
+    axis.text.x = element_blank(),
+    panel.grid = element_blank(),
+    legend.position = "top",
+    legend.direction = "vertical",
+    legend.justification = c(1,0),
+    legend.text = element_text(size = 12)
+  )
+p7
+
+##**差异基因点图**
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+#install.packages("ggrastr")
+library(ggrastr)
+library(ggrepel)
+sce.all1 <- endo
+Idents(sce.all1)
+sce.all1$celltype_totalsub1 <- Idents(sce.all1)
+
+#计算所有细胞类型的差异基因：PM-ABX
+unique(sce.all1$celltype_totalsub1)
+celltype <- unique(sce.all1$celltype_totalsub1)
+table(sce.all1$celltype_totalsub1)
+DEGslist <- list()
+for (i in 1:length(celltype)) {
+  
+  sce_data <- subset(sce.all1, idents = celltype[i])
+  DEGs <- FindMarkers(sce_data,
+                      ident.1 = "PM", 
+                      ident.2 = "ABX",
+                      min.pct = 0.25, 
+                      logfc.threshold = 0.25,
+                      group.by="sample",
+                      verbose=T)
+  DEGs$celltype <- celltype[i]
+  DEGslist[[i]] <- DEGs
+}
+sce.all1$sample
+#得到差异基因列表
+cell_type_DEGs <- do.call("rbind",DEGslist)
+cell_type_DEGs$gene <- rownames(cell_type_DEGs)
+#对数据进行设置，区分显著与非显著
+cell_DEs <- mutate(cell_type_DEGs, sig = ifelse(p_val_adj < 0.01 | p_val_adj < 0.01, "Sig", "NS"))
+
+#定义细胞颜色
+cols <- data.frame(celltype=unique(sce.all1$celltype_totalsub1),
+                   color = c('#68A180', '#B53E2B','#F1BB72','#336699','#585658'
+               ))
+
+c('#E5D2DD', '#53A85F', '#F1BB72', '#F3B1A0', '#D6E7A3', '#57C3F3', '#476D87',
+               '#E95', '#E59CC4', '#AB3282', '#23452F', '#BD956A',  '#585658',
+               '#9FA3A8', '#E0D4CA', '#5F3D69', '#58A4C3', '#E4C755', '#F7F398',
+               '#AA9A59', '#E63863', '#E39A35', '#C1E6F3', '#6778AE', '#91D0BE',
+               '#B53E2B',
+               '#712820', '#DCC1DD', '#CCE0F5',  '#CCC9E6', '#625D9E', '#68A180', '#3A6963',
+               '#968175','#330066','#336699','#66CC66','#FFCC33',"#00BFC4","#AB82FF"
+               )
+
+cell_DEs <- full_join(cell_DEs, cols, by = "celltype")
+cell_DEs <-group_by(cell_DEs, celltype)
+
+#挑选top10基因展示
+sigs<-dplyr::filter(cell_DEs, sig == "Sig")
+top_5<-sigs %>% group_by(celltype) %>% slice_max(order_by = avg_log2FC, n = 5)
+bot_5<-sigs %>% group_by(celltype) %>% slice_min(order_by = avg_log2FC, n = 5)
+five<-dplyr::full_join(top_5, bot_5)
+
+#设置细胞顺序
+cell_DEs$celltype<-factor(cell_DEs$celltype, levels = c("AECs","CapECs","LECs","PECs","VECs"))
+cell_DEs_sig<-dplyr::filter(cell_DEs, sig!= "NS")
+col_for_plot<-cell_DEs_sig$color
+write.csv(cell_DEs_sig, file = "endogene_PMvsABX.csv", row.names = FALSE)
+
+
+p = ggplot(cell_DEs, aes(x = celltype, y = avg_log2FC)) +
+  geom_jitter_rast(data=cell_DEs[cell_DEs$sig == "NS",],
+                   color="grey",
+                   width = 0.2, 
+                   height = 0.0, 
+                   alpha = .25, 
+                   shape = 16) +
+  geom_jitter_rast(data=cell_DEs[cell_DEs$sig != "NS",],
+                   color=col_for_plot,
+                   width = 0.2, 
+                   height = 0.0, 
+                   shape = 16) + 
+  theme_bw() +
+  theme(axis.text.x = element_text(color = 'black',size = 10), 
+        legend.position = "none", 
+        axis.line = element_line(colour = "black"),
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(), 
+        axis.title.y = element_blank(), 
+        axis.text.y = element_text(color = 'black', size = 8))+ 
+  geom_text_repel(data = five,label = five$gene, 
+                  fontface = "italic", size = 2,
+                  max.overlaps = Inf) +
+  ggtitle("PM vs ABX DEGs")
+ggsave(file = "endocell_gene_PMvsABX.pdf",plot = p,width = 5,height = 4)
+```
+
+# 2025-3-23 内皮细胞功能通路分析GO&KEGG
+```{r}
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(org.Mm.eg.db)
+library(dplyr)
+library(clusterProfiler)
+library(ggthemes)
+library(org.Hs.eg.db)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(enrichplot)
+
+##**计算每个细胞类群的差异marker**
+AECs <- subset(endo, endocelltype=="AECs")
+diff_AECs <- FindMarkers(AECs, min.pct = 0, 
+                           logfc.threshold = 0,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+
+CapECs <- subset(endo, endocelltype=="CapECs")
+diff_CapECs <- FindMarkers(CapECs, min.pct = 0, 
+                           logfc.threshold = 0,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+
+LECs <- subset(endo, endocelltype=="LECs")
+diff_LECs <- FindMarkers(LECs, min.pct = 0, 
+                           logfc.threshold = 0,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+
+PECs <- subset(endo, endocelltype=="PECs")
+diff_PECs <- FindMarkers(PECs, min.pct = 0, 
+                           logfc.threshold = 0,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+
+VECs <- subset(endo, endocelltype=="VECs")
+diff_VECs <- FindMarkers(VECs, min.pct = 0, 
+                           logfc.threshold = 0,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+
+##**添加上下调基因**
+DEG_DESeq2 <- diff_VECs
+logFC_t=0
+P.Value_t = 0.05
+k1 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC < -logFC_t)
+k2 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC > logFC_t)
+DEG_DESeq2 <- mutate(DEG_DESeq2,change = ifelse(k1,"down",ifelse(k2,"up","stable")))
+table(DEG_DESeq2$change)
+#4.加ENTREZID列，用于富集分析（symbol转entrezid，然后inner_join）
+DEG_DESeq2$symbol <- rownames(DEG_DESeq2)
+s2e <- bitr(DEG_DESeq2$symbol, 
+            fromType = "SYMBOL",
+            toType = "ENTREZID",
+            OrgDb = org.Mm.eg.db)#人类
+#其他物种http://bioconductor.org/packages/release/BiocViews.html#___OrgDb
+DEG_DESeq2 <- inner_join(DEG_DESeq2,s2e,by=c("symbol"="SYMBOL"))
+
+##**GO分析**
+# 1.GO 富集分析----
+#(1)输入数据
+gene_up = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'up'] 
+gene_down = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'down'] 
+gene_diff = c(gene_up,gene_down)
+
+#(2)富集
+ego_diff <- enrichGO(gene = gene_diff,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_up <- enrichGO(gene = gene_up,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_down <- enrichGO(gene = gene_down,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+
+enrichment_fold=apply(ego_diff@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_diff@result$enrichment_fold <- enrichment_fold
+GOO <- ego_diff@result
+write.csv(GOO,file = "GO_diff_VECs.csv")
+
+enrichment_fold=apply(ego_up@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_up@result$enrichment_fold <- enrichment_fold
+GOO <- ego_up@result
+write.csv(GOO,file = "GO_up_VECs.csv")
+
+enrichment_fold=apply(ego_down@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_down@result$enrichment_fold <- enrichment_fold
+GOO <- ego_down@result
+write.csv(GOO,file = "GO_down_VECs.csv")
+
+
+##**KEGG分析**
+gene_up = DEG_DESeq2[DEG_DESeq2$change == 'up','ENTREZID'] 
+gene_down = DEG_DESeq2[DEG_DESeq2$change == 'down','ENTREZID'] 
+gene_diff = c(gene_up,gene_down)
+
+#（2）对上调/下调/所有差异基因进行富集分析
+  kk.up <- enrichKEGG(gene         = gene_up,
+                      organism     = 'mmu')
+  kk.down <- enrichKEGG(gene         =  gene_down,
+                        organism     = 'mmu')
+  kk.diff <- enrichKEGG(gene         = gene_diff,
+                        organism     = 'mmu')
+
+#(3)看看富集到了吗？https://mp.weixin.qq.com/s/NglawJgVgrMJ0QfD-YRBQg
+table(kk.diff@result$p.adjust<0.05)
+table(kk.up@result$p.adjust<0.05)
+table(kk.down@result$p.adjust<0.05)
+
+class(kk.diff)
+head(kk.diff@result$geneID)
+kk2 = setReadable(kk.diff,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_diff_VECs.csv")
+
+kk2 = setReadable(kk.up,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_up_VECs.csv")
+
+kk2 = setReadable(kk.down,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_down_VECs.csv")
+```
+
+# 2025-3-24 基质细胞差异基因分析
+```{r}
+load("Fibro.Rdata")
+DimPlot(immune,reduction = "umap", label =T)
+
+##**查看细胞类群**
+fibro$fibrocelltype <- Idents(fibro)
+table(fibro$fibrocelltype)
+
+##**CapECs是否有气体交换相关的gene**(后续再探讨)
+Fibroblasts <- subset(fibro, fibrocelltype=="Fibroblasts")
+diff_Fibroblasts <- FindMarkers(Fibroblasts, min.pct = 0, 
+                           logfc.threshold = 0,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+
+##**计算每个细胞类群的差异marker**
+Fibroblasts <- subset(fibro, fibrocelltype=="Fibroblasts")
+diff_Fibroblasts <- FindMarkers(Fibroblasts, min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+diff_Fibroblasts$label <- ifelse(diff_Fibroblasts$p_val_adj<0.05,"adjust P-val<0.05","adjust P-val>=0.05")
+table(diff_Fibroblasts$label)
+
+Myofibroblasts <- subset(fibro, fibrocelltype=="Myofibroblasts")
+diff_Myofibroblasts <- FindMarkers(Myofibroblasts, min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+diff_Myofibroblasts$label <- ifelse(diff_Myofibroblasts$p_val_adj<0.05,"adjust P-val<0.05","adjust P-val>=0.05")
+table(diff_Myofibroblasts$label)
+
+Mesenchymal <- subset(fibro, fibrocelltype=="Mesenchymal cells")
+diff_Mesenchymal <- FindMarkers(Mesenchymal, min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+diff_Mesenchymal$label <- ifelse(diff_Mesenchymal$p_val_adj<0.05,"adjust P-val<0.05","adjust P-val>=0.05")
+table(diff_Mesenchymal$label)
+
+Mesothelial <- subset(fibro, fibrocelltype=="Mesothelial cells")
+diff_Mesothelial <- FindMarkers(Mesothelial, min.pct = 0.25, 
+                           logfc.threshold = 0.25,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+diff_Mesothelial$label <- ifelse(diff_Mesothelial$p_val_adj<0.05,"adjust P-val<0.05","adjust P-val>=0.05")
+table(diff_Mesothelial$label)
+
+
+##**差异基因点图**
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+#install.packages("ggrastr")
+library(ggrastr)
+library(ggrepel)
+sce.all1 <- fibro
+Idents(sce.all1)
+sce.all1$celltype_totalsub1 <- Idents(sce.all1)
+
+#计算所有细胞类型的差异基因：PM-ABX
+unique(sce.all1$celltype_totalsub1)
+celltype <- unique(sce.all1$celltype_totalsub1)
+table(sce.all1$celltype_totalsub1)
+DEGslist <- list()
+for (i in 1:length(celltype)) {
+  
+  sce_data <- subset(sce.all1, idents = celltype[i])
+  DEGs <- FindMarkers(sce_data,
+                      ident.1 = "PM", 
+                      ident.2 = "ABX",
+                      min.pct = 0.25, 
+                      logfc.threshold = 0.25,
+                      group.by="sample",
+                      verbose=T)
+  DEGs$celltype <- celltype[i]
+  DEGslist[[i]] <- DEGs
+}
+sce.all1$sample
+#得到差异基因列表
+cell_type_DEGs <- do.call("rbind",DEGslist)
+cell_type_DEGs$gene <- rownames(cell_type_DEGs)
+#对数据进行设置，区分显著与非显著
+cell_DEs <- mutate(cell_type_DEGs, sig = ifelse(p_val < 0.05 | p_val < 0.05, "Sig", "NS"))
+
+#定义细胞颜色
+cols <- data.frame(celltype=unique(sce.all1$celltype_totalsub1),
+                   color = c('#68A180', '#B53E2B','#F1BB72','#336699'
+               ))
+cell_DEs <- full_join(cell_DEs, cols, by = "celltype")
+cell_DEs <-group_by(cell_DEs, celltype)
+
+#挑选top10基因展示
+sigs<-dplyr::filter(cell_DEs, sig == "Sig")
+top_5<-sigs %>% group_by(celltype) %>% slice_max(order_by = avg_log2FC, n = 5)
+bot_5<-sigs %>% group_by(celltype) %>% slice_min(order_by = avg_log2FC, n = 5)
+five<-dplyr::full_join(top_5, bot_5)
+
+#设置细胞顺序
+cell_DEs$celltype<-factor(cell_DEs$celltype, levels = c("Fibroblasts","Myofibroblasts","Mesenchymal cells","Mesothelial cells"))
+cell_DEs_sig<-dplyr::filter(cell_DEs, sig!= "NS")
+col_for_plot<-cell_DEs_sig$color
+write.csv(cell_DEs_sig, file = "fibrogene_PMvsABX.csv", row.names = FALSE)
+
+
+p = ggplot(cell_DEs, aes(x = celltype, y = avg_log2FC)) +
+  geom_jitter_rast(data=cell_DEs[cell_DEs$sig == "NS",],
+                   color="grey",
+                   width = 0.2, 
+                   height = 0.0, 
+                   alpha = .25, 
+                   shape = 16) +
+  geom_jitter_rast(data=cell_DEs[cell_DEs$sig != "NS",],
+                   color=col_for_plot,
+                   width = 0.2, 
+                   height = 0.0, 
+                   shape = 16) + 
+  theme_bw() +
+  theme(axis.text.x = element_text(color = 'black',size = 10), 
+        legend.position = "none", 
+        axis.line = element_line(colour = "black"),
+        panel.border = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(), 
+        axis.title.y = element_blank(), 
+        axis.text.y = element_text(color = 'black', size = 8))+ 
+  geom_text_repel(data = five,label = five$gene, 
+                  fontface = "italic", size = 2,
+                  max.overlaps = Inf) +
+  ggtitle("PM vs ABX DEGs")
+ggsave(file = "fibrocell_gene_PMvsABX.pdf",plot = p,width = 5,height = 4)
+```
+
+# 2025-3-23 基质细胞功能通路分析GO&KEGG
+```{r}
+fibro <- immune
+##**计算每个细胞类群的差异marker**
+Fibroblasts <- subset(fibro, fibrocelltype=="Fibroblasts")
+diff_Fibroblasts <- FindMarkers(Fibroblasts, min.pct = 0, 
+                           logfc.threshold = 0,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+
+Myofibroblasts <- subset(fibro, fibrocelltype=="Myofibroblasts")
+diff_Myofibroblasts <- FindMarkers(Myofibroblasts, min.pct = 0, 
+                           logfc.threshold = 0,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+
+Mesenchymal <- subset(fibro, fibrocelltype=="Mesenchymal cells")
+diff_Mesenchymal <- FindMarkers(Mesenchymal, min.pct = 0, 
+                           logfc.threshold = 0,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+
+Mesothelial <- subset(fibro, fibrocelltype=="Mesothelial cells")
+diff_Mesothelial <- FindMarkers(Mesothelial, min.pct = 0, 
+                           logfc.threshold = 0,
+                           group.by = "sample",
+                           ident.1 ="PM",
+                           ident.2="ABX")
+
+##**添加上下调基因**
+DEG_DESeq2 <- diff_Mesothelial
+logFC_t=0
+P.Value_t = 0.05
+k1 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC < -logFC_t)
+k2 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC > logFC_t)
+DEG_DESeq2 <- mutate(DEG_DESeq2,change = ifelse(k1,"down",ifelse(k2,"up","stable")))
+table(DEG_DESeq2$change)
+#4.加ENTREZID列，用于富集分析（symbol转entrezid，然后inner_join）
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(org.Mm.eg.db)
+DEG_DESeq2$symbol <- rownames(DEG_DESeq2)
+s2e <- bitr(DEG_DESeq2$symbol, 
+            fromType = "SYMBOL",
+            toType = "ENTREZID",
+            OrgDb = org.Mm.eg.db)#
+#其他物种http://bioconductor.org/packages/release/BiocViews.html#___OrgDb
+library(dplyr)
+DEG_DESeq2 <- inner_join(DEG_DESeq2,s2e,by=c("symbol"="SYMBOL"))
+
+##**GO分析**
+library(clusterProfiler)
+library(ggthemes)
+library(org.Hs.eg.db)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(enrichplot)
+
+# 1.GO 富集分析----
+#(1)输入数据
+gene_up = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'up'] 
+gene_down = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'down'] 
+gene_diff = c(gene_up,gene_down)
+
+#(2)富集
+ego_diff <- enrichGO(gene = gene_diff,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_up <- enrichGO(gene = gene_up,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_down <- enrichGO(gene = gene_down,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+
+enrichment_fold=apply(ego_diff@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_diff@result$enrichment_fold <- enrichment_fold
+GOO <- ego_diff@result
+write.csv(GOO,file = "GO_diff_Mesothelial.csv")
+
+enrichment_fold=apply(ego_up@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_up@result$enrichment_fold <- enrichment_fold
+GOO <- ego_up@result
+write.csv(GOO,file = "GO_up_Mesothelial.csv")
+
+enrichment_fold=apply(ego_down@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_down@result$enrichment_fold <- enrichment_fold
+GOO <- ego_down@result
+write.csv(GOO,file = "GO_down_Mesothelial.csv")
+
+
+##**KEGG分析**
+gene_up = DEG_DESeq2[DEG_DESeq2$change == 'up','ENTREZID'] 
+gene_down = DEG_DESeq2[DEG_DESeq2$change == 'down','ENTREZID'] 
+gene_diff = c(gene_up,gene_down)
+
+#（2）对上调/下调/所有差异基因进行富集分析
+  kk.up <- enrichKEGG(gene         = gene_up,
+                      organism     = 'mmu')
+  kk.down <- enrichKEGG(gene         =  gene_down,
+                        organism     = 'mmu')
+  kk.diff <- enrichKEGG(gene         = gene_diff,
+                        organism     = 'mmu')
+
+#(3)看看富集到了吗？https://mp.weixin.qq.com/s/NglawJgVgrMJ0QfD-YRBQg
+table(kk.diff@result$p.adjust<0.05)
+table(kk.up@result$p.adjust<0.05)
+table(kk.down@result$p.adjust<0.05)
+
+class(kk.diff)
+head(kk.diff@result$geneID)
+kk2 = setReadable(kk.diff,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_diff_Mesothelial.csv")
+
+kk2 = setReadable(kk.up,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_up_Mesothelial.csv")
+
+kk2 = setReadable(kk.down,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_down_Mesothelial.csv")
+```
+
+# 2025-3-30 内皮细胞细分类-capEC
+```{r fig.width=6,fig.height=4}
+load("Endocell.Rdata")
+table(Idents(endo))
+immune <- subset(endo,ident = "CapECs")
+##**尝试重新聚类**
+options(Seurat.object.assay.version = "v3")
+immune=CreateSeuratObject(counts = immune@assays$RNA@counts,
+                       meta.data = immune@meta.data)
+head(immune@meta.data, 10)
+  
+immune <- NormalizeData(immune)
+GetAssay(immune,assay = "RNA")
+immune <- FindVariableFeatures(immune, nfeatures = 2000)
+immune <- ScaleData(immune, 
+                    #vars.to.regress = c("percent.ribo", "percent.mt","nCount_RNA"), 
+                    verbose = FALSE)
+
+immune <- RunPCA(immune, 
+                 #features = VariableFeatures(immune),
+                 verbose = FALSE)
+DimPlot(immune, reduction = "pca")
+# 应该选多少个主成分进行后续分析
+ElbowPlot(immune,ndims = 50)
+#去批次
+library(harmony)
+immune <- RunHarmony(immune, group.by.vars = c("orig.ident"),plot_convergence = T)
+names(immune@reductions)
+## [1] "pca"     "harmony"
+immune <- RunUMAP(immune,  dims = 1:10, 
+                   reduction = "harmony")
+immune <- RunTSNE(immune,  dims = 1:10, 
+                   reduction = "harmony")
+DimPlot(immune,reduction = "umap",label= F,raster=FALSE) 
+DimPlot(immune,reduction = "tsne",label= F,raster=FALSE)
+
+immune <- FindNeighbors(immune,reduction = "harmony",dims = 1:10)
+immune@graphs$RNA_snn
+for (res in c(0.01, 0.05, 0.1, 0.2, 0.3, 0.5,0.8,1)) {
+  immune=FindClusters(immune,  
+                       resolution = res, 
+                       algorithm = 1)}
+apply(immune@meta.data[,grep("RNA_snn_res",
+                              colnames(immune@meta.data))],2,table)
+
+p2_tree=clustree(immune@meta.data, prefix = "RNA_snn_res.")
+#ggsave(plot=p2_tree, filename="Tree_diff_resolution.pdf",width = 7, height = 12)
+p2_tree
+table(immune@meta.data$RNA_snn_res.0.8)#根据聚类树选择0.8进行初步聚类
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+DimPlot(immune,reduction = "umap",label= F)
+
+##**查看文献marker**
+cellmarker1 <- c("Prx",#ALL
+                 "Ca4","Hpgd",#aerocytes
+                 "Fcn3","Nostrin"#endothelial gCaps
+                         )
+plot <- DotPlot(immune, features = cellmarker1)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "capec_review_marker1.pdf",plot = plot,width = 5,height = 5)
+
+cellmarker2 <- c( "EDNRB", "TBX2", "FOXP2","CLEC4E","SPON2","PRKG","CHRM2","S100A4","EDA",#Aerocytes
+                  "GPIHBP1","CD36","FCN3","BTNL9","BTNL8","CD14","IL7R","IL18R1"#General capillary ECs
+                     )
+cellmarker2=str_to_title(unique(cellmarker2))
+cellmarker2
+plot <- DotPlot(immune, features = cellmarker2)+
+  theme_bw()+
+  theme(panel.grid = element_blank(), axis.text.x=element_text(hjust = 1,vjust=0.5,angle=90))+
+  labs(x=NULL,y=NULL)+guides(size=guide_legend(order=3))+
+  scale_color_gradientn(values = seq(0,1,0.2),colours = c('#330066','#336699','#66CC66','#FFCC33'))
+ggsave(file = "capec_review_marker2.pdf",plot = plot,width = 4,height = 5)
+
+#去掉第9类
+immune <- subset(immune,ident = "9",invert = T)
+immune = RenameIdents(immune,"0" = "Endothelial gCaps",
+                       "1" = "Endothelial gCaps",
+                       "2" = "Endothelial gCaps",
+                       "3" = "Aerocytes",
+                       "4" = "Endothelial gCaps",
+                       "5" = "Aerocytes",
+                       "6" = "Aerocytes",
+                       "7" = "Aerocytes",
+                       "8" = "Endothelial gCaps"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+DimPlot(immune,reduction = "umap", label =F)
+save(immune,file = "CapECcell.Rdata")
+
+load("CapECcell.Rdata")
+DimPlot(immune,reduction = "umap", label =F)
+plot <- VlnPlot(immune, features = c("Ednrb","Tbx2",#Aerocyte
+                                    "Hpgd","Gpihbp1"#Endothelial gCaps
+                                    ),pt.size = 0)
+plot
+
+## 柱状图
+table(immune$sample)#查看各组细胞数
+prop.table(table(Idents(immune)))
+table(Idents(immune), immune$sample)#各组不同细胞群细胞数
+Cellratio <- prop.table(table(Idents(immune), immune$sample), margin = 2)#计算各组样本不同细胞群比例
+Cellratio <- as.data.frame(Cellratio)
+colnames(Cellratio) <- c("Celltype","Sample","Freq")
+color1 <- c('#b7deea','#d69971')
+
+color1 <- c('#4b6aa8','#3ca0cf','#c376a7','#ad98c3','#cea5c7',
+            '#53738c','#a5a9b0','#a78982','#696a6c','#92699e',
+            '#d69971','#df5734','#6c408e','#ac6894','#d4c2db',
+            '#537eb7','#83ab8e','#ece399','#405993','#cc7f73',
+            '#b95055','#d5bb72','#bc9a7f','#e0cfda','#d8a0c0',
+            '#e6b884','#64a776','#cbdaa9','#efd2c9','#da6f6d',
+            '#c4daec','#61bada','#b7deea','#408444')
+colourCount = length(unique(Cellratio$Celltype))
+library(ggplot2)
+
+plot <- ggplot(Cellratio) + 
+  geom_bar(aes(x =Freq, y= Sample, fill = Celltype),stat = "identity",width = 0.7,size = 0.5, #colour = '#222222'
+           )+ 
+  theme_classic() +
+  labs(x='Ratio',y = 'Sample')+
+  scale_fill_manual(values = color1)+
+  coord_flip()+
+  theme(panel.border = element_rect(fill=NA,color="black", size=0.5, linetype="solid"))
+plot
+
+## 箱型图
+source("Singlecellratio_plotstat.R")
+my_comparisons <- list( c("PM","ABX") )
+immune$celltype <- Idents(immune)
+#分组箱线图1
+plot <- Singlecellratio_plotstat(immune, group_by = "sample",
+                         meta.include = c("sample","orig.ident"),
+                         comparisons = my_comparisons, color_by = 'sample',
+                         group_by.point = "orig.ident",label.x = 1, pt.size = 1,
+                         label = 'p.format', ncol =8)
+plot
+```
+
+# 2025-3-30 cellchat 
+```{r}
+##**还原回大群**
+dim(immune)
+load("sce.all1.Rdata")
+dim(sce.all)
+table(Idents(sce.all))
+cellc <- sce.all
+rm("sce.all")
+table(Idents(immune))
+table(Idents(cellc))
+Idents(cellc, cells = colnames(immune)) <- Idents(immune)
+cellc <- subset(cellc, idents = c("CapECs"), invert = TRUE)
+DimPlot(cellc,label = TRUE)
+
+load(file = "AM.Rdata")
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6",
+                       "7" = "AM_7",
+                       "8" = "AM_8",
+                       "9" = "AM_9",
+                       "10" = "AM_10",
+                       "11" = "AM_11"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+
+table(Idents(immune))
+table(Idents(cellc))
+Idents(cellc, cells = colnames(immune)) <- Idents(immune)
+
+##**保留AM endo fibro**
+cellc <- subset(cellc,ident = "Neutrophils",invert = T)
+table(Idents(cellc))
+cellc$celltype <- Idents(cellc)
+save(cellc,file = "cellc.Rdata")
+##详见6.1 细胞互作cellchat.Rmd
+
+##**保留AM**
+rm(list=ls())
+load("cellc.Rdata")
+table(Idents(cellc))
+cellcAM <- subset(cellc,ident = "Endothelial gCaps",invert = T)
+cellcAM <- subset(cellcAM,ident = "VECs",invert = T)
+table(Idents(cellcAM))
+save(cellcAM,file = "cellcAM.Rdata")
+##详见6.1 细胞互作cellchat.Rmd
+
+##**保留AM Endo**
+rm(list=ls())
+load("cellc.Rdata")
+table(Idents(cellc))
+cellcAMendo <- subset(cellc,ident = "Fibroblasts",invert = T)
+cellcAMendo <- subset(cellcAMendo,ident = "Myofibroblasts",invert = T)
+table(Idents(cellcAMendo))
+save(cellcAMendo,file = "cellcAMendo.Rdata")
+##详见6.1 细胞互作cellchat.Rmd
+
+##**保留AM Fibro**
+rm(list=ls())
+load("cellc.Rdata")
+table(Idents(cellc))
+cellcAMfibro <- subset(cellc,ident = "Endothelial gCaps",invert = T)
+cellcAMfibro <- subset(cellcAMfibro,ident = "VECs",invert = T)
+table(Idents(cellcAMfibro))
+save(cellcAMfibro,file = "cellcAMfibro.Rdata")
+##详见6.1 细胞互作cellchat.Rmd
+```
+
+# 2025-4-5 AM_3 差异基因及富集通路
+```{r}
+##**分辨率1.0**
+load(file = "AM.Rdata")
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6",
+                       "7" = "AM_7",
+                       "8" = "AM_8",
+                       "9" = "AM_9",
+                       "10" = "AM_10",
+                       "11" = "AM_11"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+
+##**提取AM_3**
+AM3 <- subset(immune,ident = "AM_3")
+Idents(AM3) <- AM3$sample
+
+##**所有组互相比较**
+AM3.marker <- FindAllMarkers(AM3,
+                      only.pos = TRUE,  # 只返回positive基因
+                      min.pct = 0,
+                      logfc.threshold = 0
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+#筛选p_val<0.05的基因
+AM3.markers= AM3.marker %>% dplyr::select(gene,everything()) %>% dplyr::filter(p_val<0.05)
+top10 = AM3.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+write_csv(AM3.markers,file = "AM3_ALLmarkers.csv") 
+
+##**PM vs ABX**
+AM3.marker <- FindMarkers(AM3,
+                      only.pos = TRUE,  # 只返回positive基因
+                      min.pct = 0,
+                      logfc.threshold = 0,
+                      ident.1 = "PM",
+                      ident.2 = "ABX"
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+#筛选p_val<0.05的基因
+AM3.markers= AM3.marker %>% dplyr::filter(p_val<0.05)
+AM3.markers$gene <- rownames(AM3.markers)
+write_csv(AM3.markers,file = "AM3_markers_PMvsABX.csv") 
+
+##**PM vs Control**
+AM3.marker <- FindMarkers(AM3,
+                      only.pos = TRUE,  # 只返回positive基因
+                      min.pct = 0,
+                      logfc.threshold = 0,
+                      ident.1 = "PM",
+                      ident.2 = "Control"
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+#筛选p_val<0.05的基因
+AM3.markers= AM3.marker %>% dplyr::filter(p_val<0.05)
+AM3.markers$gene <- rownames(AM3.markers)
+write_csv(AM3.markers,file = "AM3_markers_PMvsControl.csv") 
+
+##**PM vs ABX富集通路**
+AM3.marker <- FindMarkers(AM3,
+                      min.pct = 0,
+                      logfc.threshold = 0,
+                      ident.1 = "PM",
+                      ident.2 = "ABX"
+                              )
+##**添加上下调基因**
+DEG_DESeq2 <- AM3.marker
+logFC_t=0
+P.Value_t = 0.05
+k1 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC < -logFC_t)
+k2 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC > logFC_t)
+DEG_DESeq2 <- mutate(DEG_DESeq2,change = ifelse(k1,"down",ifelse(k2,"up","stable")))
+table(DEG_DESeq2$change)
+#4.加ENTREZID列，用于富集分析（symbol转entrezid，然后inner_join）
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(org.Mm.eg.db)
+DEG_DESeq2$symbol <- rownames(DEG_DESeq2)
+s2e <- bitr(DEG_DESeq2$symbol, 
+            fromType = "SYMBOL",
+            toType = "ENTREZID",
+            OrgDb = org.Mm.eg.db)#
+#其他物种http://bioconductor.org/packages/release/BiocViews.html#___OrgDb
+library(dplyr)
+DEG_DESeq2 <- inner_join(DEG_DESeq2,s2e,by=c("symbol"="SYMBOL"))
+
+##**GO分析**
+library(clusterProfiler)
+library(ggthemes)
+library(org.Hs.eg.db)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(enrichplot)
+
+# 1.GO 富集分析----
+#(1)输入数据
+gene_up = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'up'] 
+gene_down = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'down'] 
+gene_diff = c(gene_up,gene_down)
+
+#(2)富集
+ego_diff <- enrichGO(gene = gene_diff,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_up <- enrichGO(gene = gene_up,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_down <- enrichGO(gene = gene_down,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+
+enrichment_fold=apply(ego_diff@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_diff@result$enrichment_fold <- enrichment_fold
+GOO <- ego_diff@result
+write.csv(GOO,file = "GO_diff_AM3.csv")
+
+enrichment_fold=apply(ego_up@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_up@result$enrichment_fold <- enrichment_fold
+GOO <- ego_up@result
+write.csv(GOO,file = "GO_up_AM3.csv")
+
+enrichment_fold=apply(ego_down@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_down@result$enrichment_fold <- enrichment_fold
+GOO <- ego_down@result
+write.csv(GOO,file = "GO_down_AM3.csv")
+
+
+##**KEGG分析**
+gene_up = DEG_DESeq2[DEG_DESeq2$change == 'up','ENTREZID'] 
+gene_down = DEG_DESeq2[DEG_DESeq2$change == 'down','ENTREZID'] 
+gene_diff = c(gene_up,gene_down)
+
+#（2）对上调/下调/所有差异基因进行富集分析
+  kk.up <- enrichKEGG(gene         = gene_up,
+                      organism     = 'mmu')
+  kk.down <- enrichKEGG(gene         =  gene_down,
+                        organism     = 'mmu')
+  kk.diff <- enrichKEGG(gene         = gene_diff,
+                        organism     = 'mmu')
+
+#(3)看看富集到了吗？https://mp.weixin.qq.com/s/NglawJgVgrMJ0QfD-YRBQg
+table(kk.diff@result$p.adjust<0.05)
+table(kk.up@result$p.adjust<0.05)
+table(kk.down@result$p.adjust<0.05)
+
+class(kk.diff)
+head(kk.diff@result$geneID)
+kk2 = setReadable(kk.diff,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_diff_AM3.csv")
+
+kk2 = setReadable(kk.up,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_up_AM3.csv")
+
+kk2 = setReadable(kk.down,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_down_AM3.csv")
+
+##**Cxcl1 & Cxcl2**
+#小提琴图
+VlnPlot(AM3, features = c("Cxcl1","Cxcl2"),pt.size = 0
+        #split.by = "groups"
+        )
+
+#在umap图上标记
+FeaturePlot(AM3, features = c("Cxcl1","Cxcl2"),
+            label = T,pt.size = 0.3,
+            split.by = "sample"
+            )
+
+# Dot plots
+DotPlot(AM3, features = c("Cxcl1","Cxcl2"),
+        #split.by = "groups"
+        ) + RotatedAxis()
+```
+
+# 2025-4-6 毛细血管内皮细胞基因表达
+```{r}
+rm(list = ls())
+load("CapECcell.Rdata")
+DimPlot(immune,reduction = "umap", label =F,split.by = "sample")
+table(immune$sample)
+immune <- subset(immune,ident = "Aerocytes")
+Idents(immune) <- immune$sample
+
+##**计算差异基因**
+# 所有组互相比较
+cap.marker <- FindAllMarkers(immune,
+                      only.pos = TRUE,  # 只返回positive基因
+                      min.pct = 0.25,
+                      logfc.threshold = 0.25
+                              ) 
+#筛选p_val<0.05的基因
+cap.marker= cap.marker %>% dplyr::select(gene,everything()) %>% dplyr::filter(p_val<0.05)
+write_csv(cap.marker,file = "capEC_ALLmarkers.csv") 
+
+# PM vs ABX
+cap.marker <- FindMarkers(immune,
+                      only.pos = TRUE,# 只返回positive基因
+                      min.pct = 0.25,
+                      logfc.threshold = 0.25,
+                      ident.1 = "PM",
+                      ident.2 = "ABX"
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+#筛选p_val<0.05的基因
+cap.marker= cap.marker %>% dplyr::filter(p_val<0.05)
+cap.marker$gene <- rownames(cap.marker)
+write_csv(cap.marker,file = "CapEC_markers_PMvsABX.csv") 
+
+# PM vs Control
+cap.marker <- FindMarkers(immune,
+                      only.pos = TRUE,  # 只返回positive基因
+                      min.pct = 0.25,
+                      logfc.threshold = 0.25,
+                      ident.1 = "PM",
+                      ident.2 = "Control"
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+#筛选p_val<0.05的基因
+cap.marker= cap.marker %>% dplyr::filter(p_val<0.05)
+cap.marker$gene <- rownames(cap.marker)
+write_csv(cap.marker,file = "CapEC_markers_PMvsControl.csv") 
+
+##**通气相关基因表达情况**
+#计算平均表达量
+gene_cell_exp <- AverageExpression(immune,
+                                   features = c("Ca4","Hpgd","Ednrb","Sostdc1","Tbx2","Cyb5a","Foxp2","Clec4e","Spon2","Prkg","Chrm2","S100a4","Eda","Car4"),
+                                   group.by = 'sample',
+                                   slot = 'data') 
+gene_cell_exp <- as.data.frame(gene_cell_exp$RNA)
+
+gene_cell_exp <- AverageExpression(immune,
+                                   features = c("Abcc3", "Ackr2", "Adgrl3", "Apln", "Car4", "Chst1", "Ednrb", "Emp2", "Fibin", "Glp1r", "Hmcn1", "Kdr", "Plcb1", "Pxdn", "Tbx2", "Tbx3", "Rgs6"),
+                                   group.by = 'sample',
+                                   slot = 'data') 
+gene_cell_exp <- as.data.frame(gene_cell_exp$RNA)
+
+# Dot plots
+DotPlot(immune, features = c("Ca4","Hpgd","Ednrb","Sostdc1","Tbx2","Cyb5a","Foxp2","Clec4e","Spon2","Prkg","Chrm2","S100a4","Eda","Car4"),
+        ) + RotatedAxis()
+
+DotPlot(immune, features = c("Abcc3", "Ackr2", "Adgrl3", "Apln", "Car4", "Chst1", "Ednrb", "Emp2", "Fibin", "Glp1r", "Hmcn1", "Kdr", "Plcb1", "Pxdn", "Tbx2", "Tbx3", "Rgs6"),
+        ) + RotatedAxis()
+```
+
+# 2025-4-14 毛细血管内皮细胞功能通路分析
+```{r}
+rm(list = ls())
+load("CapECcell.Rdata")
+DimPlot(immune,reduction = "umap", label =F,split.by = "sample")
+Idents(immune) <- immune$celltype
+immune <- subset(immune,ident = "Aerocytes")
+Idents(immune) <- immune$sample
+
+##**PM vs ABX富集通路**
+immune.marker <- FindMarkers(immune,
+                      min.pct = 0,
+                      logfc.threshold = 0,
+                      ident.1 = "PM",
+                      ident.2 = "ABX"
+                              )
+cap.marker= immune.marker[immune.marker$p_val<0.05,]
+write_csv(cap.marker,file = "Aerocyte_markers.csv") 
+
+##**添加上下调基因**
+DEG_DESeq2 <- immune.marker
+logFC_t=0
+P.Value_t = 0.05
+k1 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC < -logFC_t)
+k2 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC > logFC_t)
+DEG_DESeq2 <- mutate(DEG_DESeq2,change = ifelse(k1,"down",ifelse(k2,"up","stable")))
+table(DEG_DESeq2$change)
+#4.加ENTREZID列，用于富集分析（symbol转entrezid，然后inner_join）
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(org.Mm.eg.db)
+DEG_DESeq2$symbol <- rownames(DEG_DESeq2)
+s2e <- bitr(DEG_DESeq2$symbol, 
+            fromType = "SYMBOL",
+            toType = "ENTREZID",
+            OrgDb = org.Mm.eg.db)#
+#其他物种http://bioconductor.org/packages/release/BiocViews.html#___OrgDb
+library(dplyr)
+DEG_DESeq2 <- inner_join(DEG_DESeq2,s2e,by=c("symbol"="SYMBOL"))
+
+##**GO分析**
+library(clusterProfiler)
+library(ggthemes)
+library(org.Hs.eg.db)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(enrichplot)
+
+# 1.GO 富集分析----
+#(1)输入数据
+gene_up = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'up'] 
+gene_down = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'down'] 
+gene_diff = c(gene_up,gene_down)
+
+#(2)富集
+ego_diff <- enrichGO(gene = gene_diff,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_up <- enrichGO(gene = gene_up,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_down <- enrichGO(gene = gene_down,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+
+enrichment_fold=apply(ego_diff@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_diff@result$enrichment_fold <- enrichment_fold
+GOO <- ego_diff@result
+write.csv(GOO,file = "GO_diff_Aerocyte.csv")
+
+enrichment_fold=apply(ego_up@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_up@result$enrichment_fold <- enrichment_fold
+GOO <- ego_up@result
+write.csv(GOO,file = "GO_up_Aerocyte.csv")
+
+enrichment_fold=apply(ego_down@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_down@result$enrichment_fold <- enrichment_fold
+GOO <- ego_down@result
+write.csv(GOO,file = "GO_down_Aerocyte.csv")
+
+
+##**KEGG分析**
+gene_up = DEG_DESeq2[DEG_DESeq2$change == 'up','ENTREZID'] 
+gene_down = DEG_DESeq2[DEG_DESeq2$change == 'down','ENTREZID'] 
+gene_diff = c(gene_up,gene_down)
+
+#（2）对上调/下调/所有差异基因进行富集分析
+  kk.up <- enrichKEGG(gene         = gene_up,
+                      organism     = 'mmu')
+  kk.down <- enrichKEGG(gene         =  gene_down,
+                        organism     = 'mmu')
+  kk.diff <- enrichKEGG(gene         = gene_diff,
+                        organism     = 'mmu')
+
+#(3)看看富集到了吗？https://mp.weixin.qq.com/s/NglawJgVgrMJ0QfD-YRBQg
+table(kk.diff@result$p.adjust<0.05)
+table(kk.up@result$p.adjust<0.05)
+table(kk.down@result$p.adjust<0.05)
+
+class(kk.diff)
+head(kk.diff@result$geneID)
+kk2 = setReadable(kk.diff,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_diff_Aerocyte.csv")
+
+kk2 = setReadable(kk.up,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_up_Aerocyte.csv")
+
+kk2 = setReadable(kk.down,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_down_Aerocyte.csv")
+```
+
+# 2025-6-3 AM_0 差异基因及富集通路
+```{r}
+##**分辨率1.0**
+load(file = "AM.Rdata")
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6",
+                       "7" = "AM_7",
+                       "8" = "AM_8",
+                       "9" = "AM_9",
+                       "10" = "AM_10",
+                       "11" = "AM_11"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+
+##**提取AM_0**
+AM0 <- subset(immune,ident = "AM_0")
+Idents(AM0) <- AM0$sample
+
+##**所有组互相比较**
+AM0.marker <- FindAllMarkers(AM0,
+                      only.pos = TRUE,  # 只返回positive基因
+                      min.pct = 0,
+                      logfc.threshold = 0
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+#筛选p_val<0.05的基因
+AM0.markers= AM0.marker %>% dplyr::select(gene,everything()) %>% dplyr::filter(p_val<0.05)
+top10 = AM0.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+write_csv(AM0.markers,file = "AM0_ALLmarkers.csv") 
+
+##**PM vs ABX**
+AM0.marker <- FindMarkers(AM0,
+                      only.pos = TRUE,  # 只返回positive基因
+                      min.pct = 0,
+                      logfc.threshold = 0,
+                      ident.1 = "PM",
+                      ident.2 = "ABX"
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+#筛选p_val<0.05的基因
+AM0.markers= AM0.marker %>% dplyr::filter(p_val<0.05)
+AM0.markers$gene <- rownames(AM0.markers)
+write_csv(AM0.markers,file = "AM0_markers_PMvsABX.csv") 
+
+##**PM vs Control**
+AM0.marker <- FindMarkers(AM0,
+                      only.pos = TRUE,  # 只返回positive基因
+                      min.pct = 0,
+                      logfc.threshold = 0,
+                      ident.1 = "PM",
+                      ident.2 = "Control"
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+#筛选p_val<0.05的基因
+AM0.markers= AM0.marker %>% dplyr::filter(p_val<0.05)
+AM0.markers$gene <- rownames(AM0.markers)
+write_csv(AM0.markers,file = "AM0_markers_PMvsControl.csv") 
+
+##**PM vs ABX富集通路**
+AM0.marker <- FindMarkers(AM0,
+                      min.pct = 0,
+                      logfc.threshold = 0,
+                      ident.1 = "PM",
+                      ident.2 = "ABX"
+                              )
+##**添加上下调基因**
+DEG_DESeq2 <- AM0.marker
+logFC_t=0
+P.Value_t = 0.05
+k1 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC < -logFC_t)
+k2 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC > logFC_t)
+DEG_DESeq2 <- mutate(DEG_DESeq2,change = ifelse(k1,"down",ifelse(k2,"up","stable")))
+table(DEG_DESeq2$change)
+#4.加ENTREZID列，用于富集分析（symbol转entrezid，然后inner_join）
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(org.Mm.eg.db)
+DEG_DESeq2$symbol <- rownames(DEG_DESeq2)
+s2e <- bitr(DEG_DESeq2$symbol, 
+            fromType = "SYMBOL",
+            toType = "ENTREZID",
+            OrgDb = org.Mm.eg.db)#
+#其他物种http://bioconductor.org/packages/release/BiocViews.html#___OrgDb
+library(dplyr)
+DEG_DESeq2 <- inner_join(DEG_DESeq2,s2e,by=c("symbol"="SYMBOL"))
+
+##**GO分析**
+library(clusterProfiler)
+library(ggthemes)
+library(org.Hs.eg.db)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(enrichplot)
+
+# 1.GO 富集分析----
+#(1)输入数据
+gene_up = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'up'] 
+gene_down = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'down'] 
+gene_diff = c(gene_up,gene_down)
+
+#(2)富集
+ego_diff <- enrichGO(gene = gene_diff,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_up <- enrichGO(gene = gene_up,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_down <- enrichGO(gene = gene_down,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+
+enrichment_fold=apply(ego_diff@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_diff@result$enrichment_fold <- enrichment_fold
+GOO <- ego_diff@result
+write.csv(GOO,file = "GO_diff_AM0.csv")
+
+enrichment_fold=apply(ego_up@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_up@result$enrichment_fold <- enrichment_fold
+GOO <- ego_up@result
+write.csv(GOO,file = "GO_up_AM0.csv")
+
+enrichment_fold=apply(ego_down@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_down@result$enrichment_fold <- enrichment_fold
+GOO <- ego_down@result
+write.csv(GOO,file = "GO_down_AM0.csv")
+
+
+##**KEGG分析**
+gene_up = DEG_DESeq2[DEG_DESeq2$change == 'up','ENTREZID'] 
+gene_down = DEG_DESeq2[DEG_DESeq2$change == 'down','ENTREZID'] 
+gene_diff = c(gene_up,gene_down)
+
+#（2）对上调/下调/所有差异基因进行富集分析
+  kk.up <- enrichKEGG(gene         = gene_up,
+                      organism     = 'mmu')
+  kk.down <- enrichKEGG(gene         =  gene_down,
+                        organism     = 'mmu')
+  kk.diff <- enrichKEGG(gene         = gene_diff,
+                        organism     = 'mmu')
+
+#(3)看看富集到了吗？https://mp.weixin.qq.com/s/NglawJgVgrMJ0QfD-YRBQg
+table(kk.diff@result$p.adjust<0.05)
+table(kk.up@result$p.adjust<0.05)
+table(kk.down@result$p.adjust<0.05)
+
+class(kk.diff)
+head(kk.diff@result$geneID)
+kk2 = setReadable(kk.diff,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_diff_AM0.csv")
+
+kk2 = setReadable(kk.up,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_up_AM0.csv")
+
+kk2 = setReadable(kk.down,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_down_AM0.csv")
+```
+
+# 2025-6-3 AM_7 差异基因及富集通路
+```{r}
+##**分辨率1.0**
+load(file = "AM.Rdata")
+immune <- FindClusters(immune, resolution = 1.0) #分辨率
+table(Idents(immune))
+immune = RenameIdents(immune,"0" = "AM_0",
+                       "1" = "AM_1",
+                       "2" = "AM_2",
+                       "3" = "AM_3",
+                       "4" = "AM_4",
+                       "5" = "AM_5",
+                       "6" = "AM_6",
+                       "7" = "AM_7",
+                       "8" = "AM_8",
+                       "9" = "AM_9",
+                       "10" = "AM_10",
+                       "11" = "AM_11"
+                       )
+immune$celltype <- immune@active.ident
+table(immune$celltype)
+
+##**提取AM_7**
+AM7 <- subset(immune,ident = "AM_7")
+Idents(AM7) <- AM7$sample
+
+##**所有组互相比较**
+AM7.marker <- FindAllMarkers(AM7,
+                      only.pos = TRUE,  # 只返回positive基因
+                      min.pct = 0,
+                      logfc.threshold = 0
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+#筛选p_val<0.05的基因
+AM7.markers= AM7.marker %>% dplyr::select(gene,everything()) %>% dplyr::filter(p_val<0.05)
+top10 = AM7.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+write_csv(AM7.markers,file = "AM7_ALLmarkers.csv") 
+
+##**PM vs ABX**
+AM7.marker <- FindMarkers(AM7,
+                      only.pos = TRUE,  # 只返回positive基因
+                      min.pct = 0,
+                      logfc.threshold = 0,
+                      ident.1 = "PM",
+                      ident.2 = "ABX"
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+#筛选p_val<0.05的基因
+AM7.markers= AM7.marker %>% dplyr::filter(p_val<0.05)
+AM7.markers$gene <- rownames(AM7.markers)
+write_csv(AM7.markers,file = "AM7_markers_PMvsABX.csv") 
+
+##**PM vs Control**
+AM7.marker <- FindMarkers(AM7,
+                      only.pos = TRUE,  # 只返回positive基因
+                      min.pct = 0,
+                      logfc.threshold = 0,
+                      ident.1 = "PM",
+                      ident.2 = "Control"
+                              #logfc.threshold = log(2),
+                              #max.cells.per.ident = 200,
+                              #test.use = "DESeq2",
+                              ) 
+#筛选p_val<0.05的基因
+AM7.markers= AM7.marker %>% dplyr::filter(p_val<0.05)
+AM7.markers$gene <- rownames(AM7.markers)
+write_csv(AM7.markers,file = "AM7_markers_PMvsControl.csv") 
+
+##**PM vs ABX富集通路**
+AM7.marker <- FindMarkers(AM7,
+                      min.pct = 0,
+                      logfc.threshold = 0,
+                      ident.1 = "PM",
+                      ident.2 = "ABX"
+                              )
+##**添加上下调基因**
+DEG_DESeq2 <- AM7.marker
+logFC_t=0
+P.Value_t = 0.05
+k1 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC < -logFC_t)
+k2 = (DEG_DESeq2$p_val < P.Value_t)&(DEG_DESeq2$avg_log2FC > logFC_t)
+DEG_DESeq2 <- mutate(DEG_DESeq2,change = ifelse(k1,"down",ifelse(k2,"up","stable")))
+table(DEG_DESeq2$change)
+#4.加ENTREZID列，用于富集分析（symbol转entrezid，然后inner_join）
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(org.Mm.eg.db)
+DEG_DESeq2$symbol <- rownames(DEG_DESeq2)
+s2e <- bitr(DEG_DESeq2$symbol, 
+            fromType = "SYMBOL",
+            toType = "ENTREZID",
+            OrgDb = org.Mm.eg.db)#
+#其他物种http://bioconductor.org/packages/release/BiocViews.html#___OrgDb
+library(dplyr)
+DEG_DESeq2 <- inner_join(DEG_DESeq2,s2e,by=c("symbol"="SYMBOL"))
+
+##**GO分析**
+library(clusterProfiler)
+library(ggthemes)
+library(org.Hs.eg.db)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(enrichplot)
+
+# 1.GO 富集分析----
+#(1)输入数据
+gene_up = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'up'] 
+gene_down = DEG_DESeq2$ENTREZID[DEG_DESeq2$change == 'down'] 
+gene_diff = c(gene_up,gene_down)
+
+#(2)富集
+ego_diff <- enrichGO(gene = gene_diff,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_up <- enrichGO(gene = gene_up,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+ego_down <- enrichGO(gene = gene_down,
+                  OrgDb= org.Mm.eg.db,
+                  ont = "ALL",
+                  readable = TRUE)#基因名称变得可读
+
+enrichment_fold=apply(ego_diff@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_diff@result$enrichment_fold <- enrichment_fold
+GOO <- ego_diff@result
+write.csv(GOO,file = "GO_diff_AM7.csv")
+
+enrichment_fold=apply(ego_up@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_up@result$enrichment_fold <- enrichment_fold
+GOO <- ego_up@result
+write.csv(GOO,file = "GO_up_AM7.csv")
+
+enrichment_fold=apply(ego_down@result,1,function(x){
+  GeneRatio=eval(parse(text=x["GeneRatio"]))
+  BgRatio=eval(parse(text=x["BgRatio"]))
+  enrichment_fold=round(GeneRatio/BgRatio,2)
+  enrichment_fold
+})
+ego_down@result$enrichment_fold <- enrichment_fold
+GOO <- ego_down@result
+write.csv(GOO,file = "GO_down_AM7.csv")
+
+
+##**KEGG分析**
+gene_up = DEG_DESeq2[DEG_DESeq2$change == 'up','ENTREZID'] 
+gene_down = DEG_DESeq2[DEG_DESeq2$change == 'down','ENTREZID'] 
+gene_diff = c(gene_up,gene_down)
+
+#（2）对上调/下调/所有差异基因进行富集分析
+  kk.up <- enrichKEGG(gene         = gene_up,
+                      organism     = 'mmu')
+  kk.down <- enrichKEGG(gene         =  gene_down,
+                        organism     = 'mmu')
+  kk.diff <- enrichKEGG(gene         = gene_diff,
+                        organism     = 'mmu')
+
+#(3)看看富集到了吗？https://mp.weixin.qq.com/s/NglawJgVgrMJ0QfD-YRBQg
+table(kk.diff@result$p.adjust<0.05)
+table(kk.up@result$p.adjust<0.05)
+table(kk.down@result$p.adjust<0.05)
+
+class(kk.diff)
+head(kk.diff@result$geneID)
+kk2 = setReadable(kk.diff,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_diff_AM7.csv")
+
+kk2 = setReadable(kk.up,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_up_AM7.csv")
+
+kk2 = setReadable(kk.down,
+                  OrgDb = "org.Mm.eg.db",
+                  keyType = "ENTREZID")
+head(kk2@result$geneID)
+keggg <- kk2@result
+write.csv(keggg,file = "KEGG_down_AM7.csv")
+```
+
+# 13.microbiome analysis
+## 13.1 α-diversity
+```{r}
+rm(list=ls())#clear Global Environment
+#安装包
+# install.packages("ggplot2")
+# install.packages("ggpubr")
+# install.packages("ggsignif")
+# install.packages("vegan")
+# install.packages("ggprism")
+# install.packages("picante")
+# install.packages("dplyr")
+# install.packages("RColorBrewer")
+#加载包
+library(ggplot2) # Create Elegant Data Visualisations Using the Grammar of Graphics
+library(ggpubr) # 'ggplot2' Based Publication Ready Plots
+library(ggsignif) # Significance Brackets for 'ggplot2'
+library(vegan) # Community Ecology Package
+library(picante) # Integrating Phylogenies and Ecology
+library(dplyr) # A Grammar of Data Manipulation
+library(RColorBrewer) # ColorBrewer Palettes
+library(readxl)
+
+##导入数据
+#df <- read.table("data/otu.txt",header = T, row.names = 1, check.names = F)
+df <- read.table("otu.txt",header = T, row.names = 1, check.names = F)
+NU <- c("A2", "A7", "A11", "A14", "A15", "A17", "A18", "A22", "A32", "A37", "A39", "A40", "A41", "A43", "A44", "A45", "A46", "B5", "B6", "B7", "B8", "B15", "B18", "B19", "B43", "B45", "B46", "B47", "B52", "B54", "B55", "B59", "B66", "B69")
+df <- df[,NU]
+
+#计算多样性指数
+Shannon <- diversity(df, index = "shannon", MARGIN = 2, base = exp(1))
+Simpson <- 1-diversity(df, index = "simpson", MARGIN = 2, base =  exp(1))
+Richness <- specnumber(df, MARGIN = 2)#spe.rich =sobs
+index <- as.data.frame(cbind(Shannon, Simpson, Richness))
+tdf <- t(df)
+tdf<-as.data.frame(tdf)
+df_OCA <- t(estimateR(tdf))
+df_OCA <- df_OCA[rownames(index),]#
+index$Chao <- df_OCA[,2]
+index$Ace <- df_OCA[,4]
+index$obs <- df_OCA[,1]
+
+index$samples <- rownames(index)
+groups <- read.delim('group.txt',header = T, stringsAsFactors = F)
+colnames(groups)[1:2] <- c('samples','group')
+df2 <- merge(index,groups,by = 'samples')
+#Shannon
+p1 <- ggplot(df2,aes(x=group,y=Shannon))+
+  stat_boxplot(geom = "errorbar", width=0.1,size=0.8)+
+  geom_boxplot(aes(fill=group), 
+               outlier.colour="white",size=0.8)+
+  geom_jitter(width = 0.35,alpha=0.4,size=2,color="black")+
+  geom_signif(comparisons = list(c("A","B")),
+              map_signif_level = T, 
+              test = wilcox.test, 
+              y_position = c(6),
+              tip_length = c(c(0,0),
+                             c(0,0),
+                             c(0,0)),
+              size=0.8,color="black")+
+  theme_bw()+
+  scale_fill_manual(values = c("#1597A5","#FEB3AE"))+
+  theme(panel.grid = element_blank(),
+        panel.background =element_blank(), 
+        axis.line=element_line(),
+        legend.position = 'none')
+p1
+
+#Simpson
+p2 <- ggplot(df2,aes(x=group,y=Simpson))+
+  stat_boxplot(geom = "errorbar", width=0.1,size=0.8)+
+  geom_boxplot(aes(fill=group), 
+               outlier.colour="white",size=0.8)+
+  geom_jitter(width = 0.35,alpha=0.4,size=2,color="black")+
+  geom_signif(comparisons = list(c("A","B")),
+              map_signif_level = T,
+              test = wilcox.test, 
+              y_position = c(0.7),
+              tip_length = c(c(0,0),
+                             c(0,0),
+                             c(0,0)),
+              size=0.8,color="black")+
+  theme_bw()+
+  scale_fill_manual(values = c("#1597A5","#FEB3AE"))+
+  theme(panel.grid = element_blank(),
+        panel.background =element_blank(),
+        axis.line=element_line(),
+        legend.position = 'none')
+p2
+
+#Ace
+p3 <- ggplot(df2,aes(x=group,y=Ace))+
+  stat_boxplot(geom = "errorbar", width=0.1,size=0.8)+
+  geom_boxplot(aes(fill=group), 
+               outlier.colour="white",size=0.8)+
+  geom_jitter(width = 0.35,alpha=0.4,size=2,color="black")+
+  geom_signif(comparisons = list(c("A","B")),
+              map_signif_level = T,
+              test = wilcox.test, 
+              y_position = c(650),
+              tip_length = c(c(0,0),
+                             c(0,0),
+                             c(0,0))+
+              size=0.8,color="black")+
+  theme_bw()+
+  scale_fill_manual(values = c("#1597A5","#FEB3AE"))+
+  theme(panel.grid = element_blank(),
+        panel.background =element_blank(), 
+        axis.line=element_line(),
+        legend.position = 'none')
+p3
+
+#Chao
+p4 <- ggplot(df2,aes(x=group,y=Chao))+
+  stat_boxplot(geom = "errorbar", width=0.1,size=0.8)+
+  geom_boxplot(aes(fill=group), 
+               outlier.colour="white",size=0.8)+
+  geom_jitter(width = 0.35,alpha=0.4,size=2,color="black")+
+  geom_signif(comparisons = list(c("A","B")),
+              map_signif_level = T, 
+              test = wilcox.test, 
+              y_position = c(650),
+              tip_length = c(c(0,0),
+                             c(0,0),
+                             c(0,0)),
+              size=0.8,color="black")+
+  theme_bw()+
+  scale_fill_manual(values = c("#1597A5","#FEB3AE"))+
+  theme(panel.grid = element_blank(),
+        panel.background =element_blank(), 
+        axis.line=element_line(),
+        legend.position = 'none')
+p4
+
+library("gridExtra") # Miscellaneous Functions for "Grid" Graphics
+library("cowplot") # Streamlined Plot Theme and Plot Annotations for 'ggplot2'
+p <- plot_grid(p1,p2,p3,p4, labels=c('A','B','C','D'), ncol=2, nrow=2)
+ggsave('fig/α-diversity.pdf',width=8,height = 7)
+
+library(export)
+out_img <- function(filename,pic_width=8,pic_height=8){
+  graph2pdf(file=filename,width=pic_width,height=pic_height)
+  graph2ppt(file=filename,width=pic_width,height=pic_height)
+  graph2svg(file=filename,width=pic_width,height=pic_height)
+}
+
+#调用函数
+out_img(filename="α多样性")
+```
+
+## 13.2 PCoA
+```{r}
+library(vegan)
+library(ggplot2)
+otu_raw <- read.table(file="otu.txt",sep="\t",header=T,check.names=FALSE ,row.names=1)
+NU <- c("A2", "A7", "A11", "A14", "A15", "A17", "A18", "A22", "A32", "A37", "A39", "A40", "A41", "A43", "A44", "A45", "A46", "B5", "B6", "B7", "B8", "B15", "B18", "B19", "B43", "B45", "B46", "B47", "B52", "B54", "B55", "B59", "B66", "B69")
+otu_raw <- otu_raw[,NU]
+otu <- t(otu_raw)
+
+#bray_curtis
+otu.distance <- vegdist(otu,method = "bray")
+otu.distance1 <- as.matrix(round(otu.distance,digits = 3))
+write.table(otu.distance1,'matrix_bray_curtis.txt', row.names = T, sep = '\t', quote = F)
+pcoa <- cmdscale (otu.distance,eig=TRUE)
+pc12 <- pcoa$points[,1:2]
+pc <- round(pcoa$eig/sum(pcoa$eig)*100,digits=2)
+
+pc12 <- as.data.frame(pc12)
+pc12$samples <- row.names(pc12)
+head(pc12)
+
+p <- ggplot(pc12,aes(x=V1, y=V2))+
+  geom_point(size=3)+
+  theme_bw()
+p
+
+group <- read.table("group.txt", sep='\t', header=T)
+colnames(group) <- c("samples","group")
+df <- merge(pc12,group,by="samples")
+head(df)
+
+color=c("#1597A5",
+        "#FEB3AE")
+p1 <-ggplot(data=df,aes(x=V1,y=V2,
+                       color=group))+
+  theme_bw()+
+  geom_point(size=3)+
+  theme(panel.grid = element_blank())+
+  geom_vline(xintercept = 0,lty="dashed")+
+  geom_hline(yintercept = 0,lty="dashed")+
+  #geom_text(aes(label=samples, y=V2+0.03,x=V1+0.03,  vjust=0),size=3.5)+
+ # guides(color=guide_legend(title=NULL))+
+  labs(x=paste0("PC1 (",pc[1],"%)"),
+       y=paste0("PC2 (",pc[2],"%)"))+
+  stat_ellipse(data=df,
+               geom = "polygon",level=0.9,
+               linetype = 2,size=0.5,
+               aes(fill=group),
+               alpha=0.2,
+               show.legend = T)+
+  scale_color_manual(values = color) +
+  scale_fill_manual(values = c("#1597A5","#FEB3AE"))+
+  theme(axis.title.x=element_text(size=12),
+        axis.title.y=element_text(size=12,angle=90),
+        axis.text.y=element_text(size=10),
+        axis.text.x=element_text(size=10),
+        panel.grid=element_blank())
+p1
+library(export)
+out_img <- function(filename,pic_width=6,pic_height=6){
+  graph2pdf(file=filename,width=pic_width,height=pic_height)
+  graph2ppt(file=filename,width=pic_width,height=pic_height)
+  graph2svg(file=filename,width=pic_width,height=pic_height)
+}
+
+#调用函数
+out_img(filename="β多样性_PCoA")
+
+colnames(df) <- c("samples", "PC1", "PC2", "group")
+
+library(ggpubr)
+library(ggsignif)
+
+p2 <- ggplot(df,aes(x=group,y=PC2))+
+  stat_boxplot(geom = "errorbar", width=0.1,size=0.5)+
+  geom_boxplot(aes(fill=group), 
+               outlier.colour="white",size=0.5)+
+  theme(panel.background =element_blank(), 
+        axis.line=element_line(color = "white"),
+        axis.text.y = element_blank(),
+        panel.grid = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = 'none')+
+  xlab("") + ylab("")+
+  scale_fill_manual(values=c("#1597A5","#FEB3AE"))+
+  geom_signif(comparisons = list(c("A","B")),
+              map_signif_level = T, 
+              test = t.test, 
+              y_position = c(0.5),
+              tip_length = c(c(0,0),
+                             c(0,0),
+                             c(0,0)),
+              size=0.8,color="black")
+p2
+
+p3 <- ggplot(df,aes(x=group,y=PC1))+
+  stat_boxplot(geom = "errorbar", width=0.1,size=0.5)+
+  coord_flip()+
+  geom_boxplot(aes(fill=group), 
+               outlier.colour="white",size=0.5)+
+  theme(panel.background =element_blank(), 
+        axis.line=element_line(color = "white"),
+        axis.text.x = element_blank(),
+        panel.grid = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = 'none')+
+  xlab("") + ylab("")+
+  scale_fill_manual(values=c("#1597A5","#FEB3AE"))+
+  geom_signif(comparisons = list(c("A","B")),
+              map_signif_level = T,
+              test = t.test, 
+              y_position = c(0.48,0.55,0.62),
+              tip_length = c(c(0,0),
+                             c(0,0),
+                             c(0,0)),
+              size=0.8,color="black")
+p3
+p4 <- ggarrange(p3, NULL, p1, p2, widths = c(4,2), heights = c(1.5,4), align = "hv")
+p4
+library(export)
+out_img <- function(filename,pic_width=8,pic_height=6){
+  graph2pdf(file=filename,width=pic_width,height=pic_height)
+  graph2ppt(file=filename,width=pic_width,height=pic_height)
+  graph2svg(file=filename,width=pic_width,height=pic_height)
+}
+
+out_img(filename="β多样性_PCoA")
+
+ggsave('fig/PCoA.pdf',width=12,height = 10)
+```
+
+## 13.3 物种丰度计算及可视化
+```{r}
+library (reshape2)
+library(ggplot2) # CRAN v3.4.2
+library(ggprism) # CRAN v1.0.4
+library(plyr)    # CRAN v1.8.8
+library(tidyr)
+
+df1 <- read.table(file="phylum.txt",sep="\t",header=T,check.names=FALSE)
+Name <- separate(df1, Taxon,into = c("first_name", "last_name"), sep = ";")
+rownames(df1) <- Name$last_name
+NU <- c("A2", "A7", "A11", "A14", "A15", "A17", "A18", "A22", "A32", "A37", "A39", "A40", "A41", "A43", "A44", "A45", "A46", "B5", "B6", "B7", "B8", "B15", "B18", "B19", "B43", "B45", "B46", "B47", "B52", "B54", "B55", "B59", "B66", "B69")
+df1 <- df1[,NU]
+write.table (df1, file ="phylum.csv",sep =",", quote =FALSE)
+
+
+df6 <- read.csv(file="phylum.csv",header=T,check.names=FALSE)
+df_phylum <- melt(df6)
+names(df_phylum)[1:2] <- c("Taxonomy","sample") 
+
+p1<-ggplot(df_phylum, aes( x = sample,y=100 * value,fill = Taxonomy))+
+  geom_col(position = 'stack', width = 0.6)+#geom_bar(position = "stack", stat = "identity", width = 0.6) 
+  scale_y_continuous(expand = c(0,0))+
+  labs(x="Samples",y="Relative Abundance(%)",
+       fill="Phylum")+
+  guides(fill=guide_legend(keywidth = 1, keyheight = 1)) + 
+  theme_bw()+
+  scale_fill_manual(values = c('#83ab8e','#cc7f73',"#63a3b8","#537eb7","#a5a9b0","#efd2c9","#e6e2a3", "#6d6fa0","#cbdaa9","#c4612f")) 
+  #scale_fill_prism(palette = "floral")
+p1
+
+library(export)
+out_img <- function(filename,pic_width=6,pic_height=6){
+  graph2pdf(file=filename,width=pic_width,height=pic_height)
+  graph2ppt(file=filename,width=pic_width,height=pic_height)
+  graph2svg(file=filename,width=pic_width,height=pic_height)
+}
+
+
+out_img(filename="Phylum")
+
+
+df1 <- read.table(file="genus.txt",sep="\t",header=T,check.names=FALSE)
+Name <- separate(df1, Taxon,into = c("first_name", "last_name",
+                                     "first_name3", "last_name4",
+                                     "first_name5", "last_name6"), sep = ";")
+NU <- c("A2", "A7", "A11", "A14", "A15", "A17", "A18", "A22", "A32", "A37", "A39", "A40", "A41", "A43", "A44", "A45", "A46", "B5", "B6", "B7", "B8", "B15", "B18", "B19", "B43", "B45", "B46", "B47", "B52", "B54", "B55", "B59", "B66", "B69")
+df1 <- df1[,NU]
+df1$Taxon <- Name$last_name6
+write.table (df1, file ="genus.csv",sep =",", quote =FALSE)
+
+df6 <- read.csv(file="genus.csv",header=T,check.names=FALSE)
+#rownames(df6) <- df6$Taxon
+#df6 <- df6[,-1]
+df_phylum <- melt(df6)
+names(df_phylum)[1:2] <- c("Taxonomy","sample")  
+
+
+p1<-ggplot(df_phylum, aes( x = sample,y=100 * value,fill = Taxonomy))+
+  geom_col(position = 'stack', width = 0.6)+#geom_bar(position = "stack", stat = "identity", width = 0.6) 
+  scale_y_continuous(expand = c(0,0))+
+  labs(x="Samples",y="Relative Abundance(%)",
+       fill="Phylum")+
+  guides(fill=guide_legend(keywidth = 1, keyheight = 1)) +
+  theme_bw()+
+  scale_fill_manual(values = c('#cc7f73','#b05545','#d25774','#83ab8e','#a9c2cb',
+                               '#c4612f','#cbdaa9','#9f8d89','#6d6fa0','#df5734','#e6e2a3',
+                               '#efd2c9','#a5a9b0','#a78982','#e29eaf',
+                               '#537eb7','#405993','#3674a2','#63a3b8','#c4daec','#61bada','#b7deea',
+                               '#92699e','#2d3462','#ac6894','#d4c2db')) 
+#scale_fill_prism(palette = "floral")
+p1
+
+library(export)
+out_img <- function(filename,pic_width=7,pic_height=6){
+  graph2pdf(file=filename,width=pic_width,height=pic_height)
+  graph2ppt(file=filename,width=pic_width,height=pic_height)
+  graph2svg(file=filename,width=pic_width,height=pic_height)
+}
+
+out_img(filename="Genus")
+```
+
+## 13.4 LEfSe
+```{r}
+library (stringr)
+#install.packages("microeco") 
+#install.packages("RColorBrewer")
+#install.packages("tidytree")
+#BiocManager::install("ggtree")
+library(microeco) 
+library(ggplot2)
+library(magrittr)
+tax <- read.table("tax.txt",header = T,row.names = 1,sep = "\t", )
+tax <- as.data.frame(tax[,-(3:130)])
+tax[c('domain',"phylum","class","order","family","genus","species")] <- str_split_fixed(tax$taxonomy, '; ', 7)
+tax <- tax[,-(1:2)]
+asv <- read.table("asv.txt",header = T, row.names = 1, sep = "\t",)
+NU <- c("A2", "A7", "A11", "A14", "A15", "A17", "A18", "A22", "A32", "A37", "A39", "A40", "A41", "A43", "A44", "A45", "A46", "B5", "B6", "B7", "B8", "B15", "B18", "B19", "B43", "B45", "B46", "B47", "B52", "B54", "B55", "B59", "B66", "B69")
+asv <- asv[,NU]
+group <- read.table("Group.txt",header = T,row.names = 1, sep = "\t")
+group$samples_name <- rownames(group)
+tax %<>% tidy_taxonomy 
+Table <- microtable$new(otu_table = asv, 
+                        tax_table = tax, 
+                        sample_table = group, 
+                        auto_tidy = F)
+
+lefse <- trans_diff$new(dataset = Table,
+                        method = "lefse",
+                        group = "group",
+                        p_adjust_method = "none",
+                        alpha = 0.001)  
+diff <- as.data.frame(lefse$res_diff)
+
+
+p <- lefse$plot_diff_bar(use_number = 1:30, 
+                         #threshold = 3.6,
+                         width = 0.7, 
+                         group_order = c("Early COPD","Control"),  
+                         color_values = c("#FEB3AE","#1597A5"),
+                         add_sig = T
+                         ) 
+dev.off()
+ggsave("LDA.pdf",plot = p, width = 6,height = 6) 
+
+p1 <- lefse$plot_diff_cladogram(color = c("#FEB3AE","#1597A5"),
+                                use_taxa_num = 180,
+                          use_feature_num = 18,
+                          clade_label_level = 4,
+                          group_order = c("Early COPD", "Control"),
+                          select_show_labels = "s__Parvimonas micra")
+ggsave("LEfSe.pdf",plot = p1, width = 10,height = 10) 
+```
+
+## 13.5 连线图
+```{r}
+library(ggplot2)
+library(dplyr)
+library(ggsignif)
+library(ggh4x)
+library(RColorBrewer)
+data2 <- read.csv("data.csv")
+data2 <- data2[,-1]
+
+pp = ggplot(data2, aes(x = Type, y = Value, group = Sample)) +
+  geom_point(aes(fill = Type), size = 3,shape=21) +
+  geom_line(aes(group = Sample), alpha = 0.5,color='grey',linewidth=1) + 
+  scale_fill_manual(values = c('Control'='pink','Early_COPD'='navy'))+
+  geom_signif(aes(group = Sample),comparisons = list(c("Control", "Early_COPD")), test='wilcox.test',
+              test.args=list(alternative = "two.sided", paired=T),
+              map_signif_level = F) + 
+  theme_classic(base_size = 14)+
+  theme(legend.position = 'none')+
+  labs(x = NULL,y='Abundance')+
+  scale_x_discrete(guide = "axis_truncated")+
+  scale_y_continuous(guide = "axis_truncated")+
+  ggtitle("Parvimonas micra") + 
+  theme(plot.title = element_text(hjust = 0, vjust = 1))#+ 
+  #theme(aspect.ratio = 2)
+pdf('paired_dot_line.pdf',width = 4,height = 4)
+print(pp)
+dev.off()
+
+library(export)
+out_img <- function(filename,pic_width=4,pic_height=4){
+  graph2pdf(file=filename,width=pic_width,height=pic_height)
+  graph2ppt(file=filename,width=pic_width,height=pic_height)
+  graph2svg(file=filename,width=pic_width,height=pic_height)
+}
+out_img(filename="paired_dot_line")
+```
+
+## 13.6 偏相关分析
+```{r}
+library(ppcor)
+library(corrplot)
+library(ggplot2)
+library(ggpubr)
+library(dplyr)
+library(GGally)
+# 2.------------------------------------------------
+df <- read.csv(file.choose("exp3.csv"),header = T,row.names = 1)
+# 3.----------------------------------------------------
+# 3.1
+colnames(df)
+pairs_plot <- ggpairs(df,
+                      columns = c("Taxon", "Age", "Packyear", "BMI", "FEV1_Predicted"),
+                      upper = list(continuous = wrap("cor", size = 3)),
+                      lower = list(continuous = wrap("points", alpha = 0.5, size = 1)),
+                      diag = list(continuous = wrap("densityDiag", alpha = 0.7))) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+print(pairs_plot)
+
+# 4.1 
+create_partial_plot <- function(x_var, y_var, control_vars, data, title) {
+  lm_x <- lm(as.formula(paste(x_var, "~", paste(control_vars, collapse = "+"))), data = data)
+  lm_y <- lm(as.formula(paste(y_var, "~", paste(control_vars, collapse = "+"))), data = data)
+  residual_df <- data.frame(
+    x_resid = residuals(lm_x),
+    y_resid = residuals(lm_y)
+  )
+  pcor_result <- pcor.test(data[[x_var]], data[[y_var]], data[control_vars],method = "spearman")
+  significance_stars <- ""
+  if (pcor_result$p.value < 0.001) {
+    significance_stars <- "***"
+  } else if (pcor_result$p.value < 0.01) {
+    significance_stars <- "**"
+  } else if (pcor_result$p.value < 0.05) {
+      significance_stars <- "*" 
+  }
+  p <- ggplot(residual_df, aes(x = x_resid, y = y_resid)) +
+    geom_point(alpha = 0.7, color = "#2E86AB", size = 2.5) +
+    geom_smooth(method = "lm", se = TRUE, color = "#A23B72",
+                fill = "#F18F01", alpha = 0.2, size = 1.2) +
+    labs(
+      title = title,
+      x = paste("Residual: ", x_var, "\n(Control: ", paste(control_vars, collapse = ", "), ")", sep = ""),
+      y = paste("Residual: ", y_var, "\n(Control: ", paste(control_vars, collapse = ", "), ")", sep = ""),
+      subtitle = paste("Coefficient of partial correlation = ", round(pcor_result$estimate, 3),
+                       significance_stars, "\n",
+                       "p = ", ifelse(pcor_result$p.value < 0.001, "< 0.001",
+                                      round(pcor_result$p.value, 3)), sep = "")
+      ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
+      plot.subtitle = element_text(hjust = 0.5, color = "darkgray"),
+      axis.title = element_text(face = "bold"),
+      panel.grid.minor = element_blank(),
+      panel.border = element_rect(color = "gray", fill = NA, size = 0.5),
+      plot.background = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "white", color = NA)
+    )
+  return(p)
+}
+colnames(df)
+colnames(df)
+
+p1 <- create_partial_plot("Taxon", "IL.33", 
+                          c("Age","Packyear","BMI"),
+                          df, "Abundance vs IL.33\n(Control: Age, Packyear, BMI)")
+p1
+```
+
